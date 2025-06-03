@@ -9,7 +9,7 @@
   },
   "rewrites": [
     {
-      "source": "/api/hello",
+      "source": "/hello",
       "destination": "/api/go/entries/hello"
     }
   ]
