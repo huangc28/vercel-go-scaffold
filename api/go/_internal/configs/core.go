@@ -24,31 +24,6 @@ type Config struct {
 		Password string `mapstructure:"password"`
 		Name     string `mapstructure:"name"`
 	} `mapstructure:"db"`
-
-	AWS struct {
-		AccessKey        string `mapstructure:"access_key_id"`
-		SecretKey        string `mapstructure:"secret_access_key"`
-		S3BucketRegion   string `mapstructure:"s3_bucket_region"`
-		S3SnapshotBucket string `mapstructure:"s3_snapshot_bucket"`
-	} `mapstructure:"aws"`
-
-	Clerk struct {
-		SecretKey string `mapstructure:"secret_key"`
-	} `mapstructure:"clerk"`
-
-	Starburst struct {
-		Host     string `mapstructure:"host"`
-		Port     string `mapstructure:"port"`
-		Catalog  string `mapstructure:"catalog"`
-		Schema   string `mapstructure:"schema"`
-		User     string `mapstructure:"user"`
-		Password string `mapstructure:"password"`
-	} `mapstructure:"starburst"`
-
-	Inngest struct {
-		EventKey string `mapstructure:"event_key"`
-		AppID    string `mapstructure:"app_id"`
-	} `mapstructure:"inngest"`
 }
 
 func NewConfig(vp *viper.Viper) (*Config, error) {

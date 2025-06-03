@@ -11,9 +11,9 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/trinodb/trino-go-client/trino"
 
+	"github.com/huangc28/vercel-go-scaffold/api/go/_internal/configs"
 	"github.com/jmoiron/sqlx"
 	"github.com/jmoiron/sqlx/reflectx"
-	"github.com/webvitals-sh/webvitals-edge-funcs/api/go/_internal/configs"
 	"go.uber.org/fx"
 )
 

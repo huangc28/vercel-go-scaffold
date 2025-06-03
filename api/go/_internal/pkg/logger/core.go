@@ -1,7 +1,7 @@
 package logger
 
 import (
-	"github.com/webvitals-sh/webvitals-edge-funcs/api/go/_internal/configs"
+	"github.com/huangc28/vercel-go-scaffold/api/go/_internal/configs"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"

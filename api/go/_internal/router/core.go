@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	wvmiddlewares "github.com/webvitals-sh/webvitals-edge-funcs/api/go/_internal/middlewares"
+	wvmiddlewares "github.com/huangc28/vercel-go-scaffold/api/go/_internal/middlewares"
 	"go.uber.org/fx"
 )
 

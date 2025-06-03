@@ -4,10 +4,33 @@ help:
 	@echo 'Usage:'
 	@sed -n 's/^##//p' ${MAKEFILE_LIST} | column -t -s ':' |  sed -e 's/^/ /'
 
+#==============================================================
+# Setup
+#==============================================================
+
+## setup: initial setup for new project
+.PHONY: setup
+setup:
+	@./scripts/setup.sh
+
+#==============================================================
+# Development
+#==============================================================
+
 ## vet: run go vet
 .PHONY: vet
 vet:
 	go vet ./...
+
+## test: run all tests
+.PHONY: test
+test:
+	go test ./...
+
+## test/coverage: run tests with coverage
+.PHONY: test/coverage
+test/coverage:
+	go test -cover ./...
 
 ## sqlc/generate: generate go code from sql queries
 .PHONY: sqlc/generate

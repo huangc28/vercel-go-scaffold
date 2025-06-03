@@ -1,9 +1,9 @@
 package appfx
 
 import (
-	"github.com/webvitals-sh/webvitals-edge-funcs/api/go/_internal/configs"
-	"github.com/webvitals-sh/webvitals-edge-funcs/api/go/_internal/db"
-	"github.com/webvitals-sh/webvitals-edge-funcs/api/go/_internal/pkg/logger"
+	"github.com/huangc28/vercel-go-scaffold/api/go/_internal/configs"
+	"github.com/huangc28/vercel-go-scaffold/api/go/_internal/db"
+	"github.com/huangc28/vercel-go-scaffold/api/go/_internal/pkg/logger"
 	"go.uber.org/fx"
 )
 
