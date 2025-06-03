@@ -24,7 +24,7 @@ Perfect for quickly bootstrapping new projects with a robust, scalable architect
 
 ```bash
 cd your-new-project
-./setup.sh
+make setup
 ```
 
 4. Follow the prompts to configure your project
