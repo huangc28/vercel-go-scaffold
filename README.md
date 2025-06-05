@@ -33,7 +33,7 @@ make setup
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/huangc28/go-chi-vercel-starter.git your-project-name
+git clone https://github.com/huangc28/kikichoice-be.git your-project-name
 cd your-project-name
 ```
 
