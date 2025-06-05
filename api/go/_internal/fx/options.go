@@ -1,9 +1,9 @@
 package appfx
 
 import (
-	"github.com/huangc28/vercel-go-scaffold/api/go/_internal/configs"
-	"github.com/huangc28/vercel-go-scaffold/api/go/_internal/db"
-	"github.com/huangc28/vercel-go-scaffold/api/go/_internal/pkg/logger"
+	"github/huangc28/kikichoice-be/api/go/_internal/configs"
+	"github/huangc28/kikichoice-be/api/go/_internal/db"
+	"github/huangc28/kikichoice-be/api/go/_internal/pkg/logger"
 	"go.uber.org/fx"
 )
 

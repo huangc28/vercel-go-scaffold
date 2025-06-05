@@ -4,11 +4,11 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	appfx "github.com/huangc28/vercel-go-scaffold/api/go/_internal/fx"
-	"github.com/huangc28/vercel-go-scaffold/api/go/_internal/handlers/hello"
-	"github.com/huangc28/vercel-go-scaffold/api/go/_internal/pkg/logger"
-	"github.com/huangc28/vercel-go-scaffold/api/go/_internal/router"
-	routerfx "github.com/huangc28/vercel-go-scaffold/api/go/_internal/router/fx"
+	appfx "github/huangc28/kikichoice-be/api/go/_internal/fx"
+	"github/huangc28/kikichoice-be/api/go/_internal/handlers/hello"
+	"github/huangc28/kikichoice-be/api/go/_internal/pkg/logger"
+	"github/huangc28/kikichoice-be/api/go/_internal/router"
+	routerfx "github/huangc28/kikichoice-be/api/go/_internal/router/fx"
 	"go.uber.org/fx"
 )
 

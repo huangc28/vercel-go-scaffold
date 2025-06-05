@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/huangc28/vercel-go-scaffold/api/go/_internal/pkg/render"
+	"github/huangc28/kikichoice-be/api/go/_internal/pkg/render"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )

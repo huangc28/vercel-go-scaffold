@@ -1,7 +1,7 @@
 package logger
 
 import (
-	"github.com/huangc28/vercel-go-scaffold/api/go/_internal/configs"
+	"github/huangc28/kikichoice-be/api/go/_internal/configs"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
