@@ -92,34 +92,6 @@ DB_PORT=5432
 DB_USER=postgres
 DB_PASSWORD=password
 DB_NAME=myapp
-
-# Supabase Configuration
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-
-# Vercel Environment
-VERCEL_ENV=development
-
-# AWS Configuration (optional)
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_S3_BUCKET_REGION=
-AWS_S3_SNAPSHOT_BUCKET=
-
-# Auth Configuration (optional)
-CLERK_SECRET_KEY=
-
-# External Services (optional)
-STARBURST_HOST=
-STARBURST_PORT=
-STARBURST_CATALOG=
-STARBURST_SCHEMA=
-STARBURST_USER=
-STARBURST_PASSWORD=
-
-INNGEST_EVENT_KEY=
-INNGEST_APP_ID=
 EOF
 fi
 
