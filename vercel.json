@@ -10,7 +10,11 @@
   "rewrites": [
     {
       "source": "/hello",
-      "destination": "/api/go/entries/hello"
+      "destination": "/api/go/entries/hello/core"
+    },
+    {
+      "source": "/v1/webhooks/telegram",
+      "destination": "/api/go/entries/telegram/core"
     }
   ]
 }

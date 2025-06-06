@@ -8,6 +8,46 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Product struct {
+	ID              int64              `json:"id"`
+	Uuid            string             `json:"uuid"`
+	Sku             string             `json:"sku"`
+	Name            string             `json:"name"`
+	Price           pgtype.Numeric     `json:"price"`
+	OriginalPrice   pgtype.Numeric     `json:"original_price"`
+	Category        string             `json:"category"`
+	InStock         bool               `json:"in_stock"`
+	StockCount      int32              `json:"stock_count"`
+	Specs           []byte             `json:"specs"`
+	Description     pgtype.Text        `json:"description"`
+	FullDescription pgtype.Text        `json:"full_description"`
+	IsActive        bool               `json:"is_active"`
+	SortOrder       pgtype.Int4        `json:"sort_order"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ProductImage struct {
+	ID        int64              `json:"id"`
+	ProductID int64              `json:"product_id"`
+	Url       string             `json:"url"`
+	AltText   pgtype.Text        `json:"alt_text"`
+	IsPrimary bool               `json:"is_primary"`
+	SortOrder pgtype.Int4        `json:"sort_order"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ProductSpec struct {
+	ID        int64              `json:"id"`
+	ProductID int64              `json:"product_id"`
+	SpecName  string             `json:"spec_name"`
+	SpecValue string             `json:"spec_value"`
+	SortOrder pgtype.Int4        `json:"sort_order"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type User struct {
 	ID        int64              `json:"id"`
 	Name      string             `json:"name"`
@@ -15,4 +55,15 @@ type User struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type UserSession struct {
+	ID          int64              `json:"id"`
+	ChatID      int64              `json:"chat_id"`
+	UserID      int64              `json:"user_id"`
+	SessionType string             `json:"session_type"`
+	State       []byte             `json:"state"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
 }

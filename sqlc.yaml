@@ -2,7 +2,8 @@ version: "2"
 sql:
   - engine: "postgresql"
     queries: "api/go/_internal/db/sqlc_queries/queries.sql"
-    schema: "supabase/schemas/users.sql"
+    schema:
+      - "supabase/schemas"
 
     gen:
       go:
