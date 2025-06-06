@@ -11,13 +11,17 @@ import (
 )
 
 type AddProductCommand struct {
-	dao *CommandDAO
+	dao        *CommandDAO
+	productDAO *ProductDAO
+	botAPI     *tgbotapi.BotAPI
 }
 
 type AddProductCommandParams struct {
 	fx.In
 
-	DAO *CommandDAO
+	DAO        *CommandDAO
+	ProductDAO *ProductDAO
+	BotAPI     *tgbotapi.BotAPI
 }
 
 // UserState represents the current state of product creation process
@@ -38,7 +42,11 @@ type ProductData struct {
 }
 
 func NewAddProductCommand(p AddProductCommandParams) *AddProductCommand {
-	return &AddProductCommand{dao: p.DAO}
+	return &AddProductCommand{
+		dao:        p.DAO,
+		productDAO: p.ProductDAO,
+		botAPI:     p.BotAPI,
+	}
 }
 
 // Before complete creating product, user can choose
@@ -159,31 +167,46 @@ func (c *AddProductCommand) handleStateStep(ctx context.Context, state *UserStat
 		}
 		state.Product.Stock = stock
 		state.Step = "description"
-		return c.sendMessage(chatID, "請輸入商品描述：")
+		return c.sendMessageWithButtons(chatID, "請輸入商品描述：", "description")
 	case "description":
 		state.Product.Description = text
 		state.Step = "specs"
-		return c.sendMessage(chatID, "請輸入商品規格（每行一項，輸入 /done 完成）：")
+		return c.sendMessageWithButtons(chatID, "請輸入商品規格（每行一項，輸入 /done 完成）：", "specs")
 	case "specs":
 		if text == "/done" {
 			state.Step = "images"
-			return c.sendMessage(chatID, "請上傳商品圖片（可多張，輸入 /done 完成）：")
+			return c.sendMessageWithButtons(chatID, "請上傳商品圖片（最多 5 張，輸入 /done 完成）：", "images")
 		}
 		state.Specs = append(state.Specs, text)
 		return c.sendMessage(chatID, "✅ 規格已新增，繼續輸入或輸入 /done 完成：")
 	case "images":
 		if text == "/done" {
+			if len(state.ImageFileIDs) == 0 {
+				return c.sendMessage(chatID, "⚠️ 請至少上傳一張商品圖片，或輸入 /done 跳過此步驟")
+			}
 			state.Step = "confirm"
 			return c.sendSummary(chatID, state)
 		} else if msg.Photo != nil {
+			// Check if maximum limit reached
+			const maxImages = 5
+			if len(state.ImageFileIDs) >= maxImages {
+				return c.sendMessage(chatID, fmt.Sprintf("❌ 最多只能上傳 %d 張圖片，目前已上傳 %d 張\n輸入 /done 完成上傳", maxImages, len(state.ImageFileIDs)))
+			}
+
 			fileID := msg.Photo[len(msg.Photo)-1].FileID
 			state.ImageFileIDs = append(state.ImageFileIDs, fileID)
-			return c.sendMessage(chatID, "✅ 圖片已上傳，繼續上傳或輸入 /done 完成：")
+
+			remaining := maxImages - len(state.ImageFileIDs)
+			if remaining > 0 {
+				return c.sendMessage(chatID, fmt.Sprintf("✅ 圖片已上傳 (%d/%d)，還可上傳 %d 張或輸入 /done 完成", len(state.ImageFileIDs), maxImages, remaining))
+			} else {
+				return c.sendMessage(chatID, fmt.Sprintf("✅ 圖片已上傳 (%d/%d)，已達上限！輸入 /done 完成", len(state.ImageFileIDs), maxImages))
+			}
 		}
-		return c.sendMessage(chatID, "請上傳圖片或輸入 /done 完成：")
+		return c.sendMessage(chatID, fmt.Sprintf("請上傳商品圖片（最多 %d 張，目前 %d 張），輸入 /done 完成：", 5, len(state.ImageFileIDs)))
 	case "confirm":
 		if text == "確認" {
-			if err := c.saveProduct(ctx, state); err != nil {
+			if err := c.productDAO.SaveProduct(ctx, state); err != nil {
 				return c.sendMessage(chatID, "❌ 儲存失敗："+err.Error())
 			} else {
 				c.sendMessage(chatID, "🎉 商品已成功上架！")
@@ -201,18 +224,47 @@ func (c *AddProductCommand) handleStateStep(ctx context.Context, state *UserStat
 	return nil
 }
 
-// sendMessage sends a text message to the chat (implement this method)
+// sendMessage sends a text message to the chat
 func (c *AddProductCommand) sendMessage(chatID int64, text string) error {
-	// TODO: Implement actual message sending via bot API
-	// This will depend on your bot setup
-	fmt.Printf("Sending message to chat %d: %s\n", chatID, text)
-	return nil
+	msg := tgbotapi.NewMessage(chatID, text)
+	_, err := c.botAPI.Send(msg)
+	return err
+}
+
+// sendMessageWithButtons sends a message with inline keyboard buttons
+func (c *AddProductCommand) sendMessageWithButtons(chatID int64, text string, step string) error {
+	msg := tgbotapi.NewMessage(chatID, text)
+
+	// Only add buttons for steps that can be skipped
+	if c.canSkipStep(step) {
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("❌ 取消", "cancel"),
+				tgbotapi.NewInlineKeyboardButtonData("⏭️ 跳過", fmt.Sprintf("skip_%s", step)),
+				tgbotapi.NewInlineKeyboardButtonData("💾 暫存", "pause"),
+			),
+		)
+		msg.ReplyMarkup = keyboard
+	}
+
+	_, err := c.botAPI.Send(msg)
+	return err
+}
+
+// canSkipStep determines if a step can be skipped
+func (c *AddProductCommand) canSkipStep(step string) bool {
+	skippableSteps := map[string]bool{
+		"description": true,
+		"specs":       true,
+		"images":      true,
+	}
+	return skippableSteps[step]
 }
 
 // sendSummary sends a product summary for confirmation
 func (c *AddProductCommand) sendSummary(chatID int64, state *UserState) error {
 	summary := fmt.Sprintf(
-		"商品摘要：\nSKU: %s\n名稱: %s\n類別: %s\n價格: %.2f\n庫存: %d\n描述: %s\n規格: %v\n圖片數量: %d\n請輸入「確認」儲存或「取消」放棄：",
+		"商品摘要：\nSKU: %s\n名稱: %s\n類別: %s\n價格: %.2f\n庫存: %d\n描述: %s\n規格: %v\n圖片數量: %d\n請選擇：",
 		state.Product.SKU,
 		state.Product.Name,
 		state.Product.Category,
@@ -222,71 +274,18 @@ func (c *AddProductCommand) sendSummary(chatID int64, state *UserState) error {
 		state.Specs,
 		len(state.ImageFileIDs),
 	)
-	return c.sendMessage(chatID, summary)
-}
 
-// saveProduct saves the product to the database using raw SQL
-func (c *AddProductCommand) saveProduct(ctx context.Context, state *UserState) error {
-	// Create product using raw SQL
-	query := `
-		INSERT INTO products (sku, name, price, category, stock_count, description)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id
-	`
+	msg := tgbotapi.NewMessage(chatID, summary)
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("✅ 確認", "confirm"),
+			tgbotapi.NewInlineKeyboardButtonData("❌ 取消", "cancel"),
+		),
+	)
+	msg.ReplyMarkup = keyboard
 
-	var productID int64
-	err := c.dao.db.QueryRow(query,
-		state.Product.SKU,
-		state.Product.Name,
-		state.Product.Price,
-		state.Product.Category,
-		state.Product.Stock,
-		state.Product.Description,
-	).Scan(&productID)
-
-	if err != nil {
-		return fmt.Errorf("failed to create product: %w", err)
-	}
-
-	// Create product specs
-	for i, spec := range state.Specs {
-		// Assume spec format is "name:value"
-		specQuery := `
-			INSERT INTO product_specs (product_id, spec_name, spec_value, sort_order)
-			VALUES ($1, $2, $3, $4)
-		`
-		// Simple parsing - you might want to improve this
-		specName := spec
-		specValue := ""
-		if len(spec) > 0 {
-			specName = spec
-			specValue = spec // For now, store the whole string as both name and value
-		}
-
-		_, err := c.dao.db.Exec(specQuery, productID, specName, specValue, i)
-		if err != nil {
-			return fmt.Errorf("failed to create product spec: %w", err)
-		}
-	}
-
-	// Create product images
-	for i, fileID := range state.ImageFileIDs {
-		imageQuery := `
-			INSERT INTO product_images (product_id, url, alt_text, is_primary, sort_order)
-			VALUES ($1, $2, $3, $4, $5)
-		`
-
-		isPrimary := i == 0 // First image is primary
-		altText := fmt.Sprintf("%s image %d", state.Product.Name, i+1)
-		url := fmt.Sprintf("telegram_file://%s", fileID)
-
-		_, err := c.dao.db.Exec(imageQuery, productID, url, altText, isPrimary, i)
-		if err != nil {
-			return fmt.Errorf("failed to create product image: %w", err)
-		}
-	}
-
-	return nil
+	_, err := c.botAPI.Send(msg)
+	return err
 }
 
 // getStepDescription returns a user-friendly description of the current step
@@ -319,7 +318,7 @@ func (c *AddProductCommand) getStepPrompt(step string) string {
 		"stock":       "請輸入商品庫存數量：",
 		"description": "請輸入商品描述：",
 		"specs":       "請輸入商品規格（每行一項，輸入 /done 完成）：",
-		"images":      "請上傳商品圖片（可多張，輸入 /done 完成）：",
+		"images":      "請上傳商品圖片（最多 5 張，輸入 /done 完成）：",
 		"confirm":     "請檢查商品資訊，輸入「確認」儲存或「取消」放棄：",
 	}
 
@@ -327,6 +326,73 @@ func (c *AddProductCommand) getStepPrompt(step string) string {
 		return prompt
 	}
 	return ""
+}
+
+// HandleCallback handles inline keyboard button presses
+func (c *AddProductCommand) HandleCallback(callback *tgbotapi.CallbackQuery) error {
+	ctx := context.Background()
+	userID := callback.From.ID
+	chatID := callback.Message.Chat.ID
+	data := callback.Data
+
+	// Get current user state
+	session, err := c.dao.GetUserSession(ctx, userID, "add_product")
+	if err != nil || session == nil {
+		return c.sendMessage(chatID, "❌ 未找到活動會話")
+	}
+
+	var state UserState
+	if err := json.Unmarshal(session.State, &state); err != nil {
+		return err
+	}
+
+	switch {
+	case data == "cancel":
+		c.sendMessage(chatID, "❌ 已取消商品上架流程")
+		return c.dao.DeleteUserSession(ctx, userID, "add_product")
+
+	case data == "confirm":
+		if err := c.productDAO.SaveProduct(ctx, &state); err != nil {
+			return c.sendMessage(chatID, "❌ 儲存失敗："+err.Error())
+		} else {
+			c.sendMessage(chatID, "🎉 商品已成功上架！")
+		}
+		return c.dao.DeleteUserSession(ctx, userID, "add_product")
+
+	case data == "pause":
+		c.sendMessage(chatID, "💾 流程已暫存，您可以稍後使用 /add_product 繼續")
+		return nil // Keep session, don't delete
+
+	case len(data) > 5 && data[:5] == "skip_":
+		step := data[5:] // Remove "skip_" prefix
+		return c.handleSkipStep(ctx, &state, step, userID, chatID)
+	}
+
+	return nil
+}
+
+// handleSkipStep handles skipping specific steps
+func (c *AddProductCommand) handleSkipStep(ctx context.Context, state *UserState, step string, userID int64, chatID int64) error {
+	switch step {
+	case "description":
+		state.Product.Description = "" // Skip with empty value
+		state.Step = "specs"
+		c.sendMessage(chatID, "⏭️ 已跳過描述")
+		return c.sendMessageWithButtons(chatID, "請輸入商品規格（每行一項，輸入 /done 完成）：", "specs")
+	case "specs":
+		state.Specs = []string{} // Skip with empty specs
+		state.Step = "images"
+		c.sendMessage(chatID, "⏭️ 已跳過規格")
+		return c.sendMessageWithButtons(chatID, "請上傳商品圖片（最多 5 張，輸入 /done 完成）：", "images")
+	case "images":
+		state.ImageFileIDs = []string{} // Skip with no images
+		state.Step = "confirm"
+		c.sendMessage(chatID, "⏭️ 已跳過圖片")
+		return c.sendSummary(chatID, state)
+	}
+
+	// Save updated state
+	return c.dao.UpdateUserSession(ctx, userID, "add_product", state)
 }
 
 func (c *AddProductCommand) Command() BotCommand {

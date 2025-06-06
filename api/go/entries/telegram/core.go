@@ -21,6 +21,11 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 		routerfx.CoreRouterOptions,
 
 		fx.Provide(
+			commands.NewCommandDAO,
+			commands.NewProductDAO,
+		),
+
+		fx.Provide(
 			commands.AsCommandHandler(commands.NewAddProductCommand),
 
 			fx.Annotate(

@@ -16,6 +16,10 @@ type CommandHandler interface {
 	Command() BotCommand
 }
 
+type CallbackHandler interface {
+	HandleCallback(callback *tgbotapi.CallbackQuery) error
+}
+
 func AsCommandHandler(f any) any {
 	return fx.Annotate(
 		f,
