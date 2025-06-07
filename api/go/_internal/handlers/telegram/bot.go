@@ -3,7 +3,6 @@ package telegram
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 
 	"github/huangc28/kikichoice-be/api/go/_internal/configs"
@@ -80,17 +79,17 @@ func (h *TelegramHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Handle callback queries (button presses)
-	if update.CallbackQuery != nil {
-		h.logger.Info("Processing callback query")
-		if err := h.processCallback(update.CallbackQuery); err != nil {
-			h.logger.Errorw("Failed to process callback", "error", err)
-			render.ChiErr(w, r, err, FailedToProcessMessage,
-				render.WithStatusCode(http.StatusInternalServerError))
-			return
-		}
-		render.ChiJSON(w, r, map[string]string{"status": "ok"})
-		return
-	}
+	// if update.CallbackQuery != nil {
+	// 	h.logger.Info("Processing callback query")
+	// 	if err := h.processCallback(update.CallbackQuery); err != nil {
+	// 		h.logger.Errorw("Failed to process callback", "error", err)
+	// 		render.ChiErr(w, r, err, FailedToProcessMessage,
+	// 			render.WithStatusCode(http.StatusInternalServerError))
+	// 		return
+	// 	}
+	// 	render.ChiJSON(w, r, map[string]string{"status": "ok"})
+	// 	return
+	// }
 
 	if update.Message == nil {
 		h.logger.Info("Received update without message")
@@ -98,44 +97,19 @@ func (h *TelegramHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !update.Message.IsCommand() && update.Message.Text == "" && update.Message.Photo == nil {
+	if !update.Message.IsCommand() {
 		h.logger.Info("Received non-command message without text or photo")
 		render.ChiJSON(w, r, map[string]string{"status": "ok"})
 		return
 	}
 
-	log.Printf("Received update: %+v\n", update)
-
-	message := h.processMessage(&update)
-
-	// Log message details
-	h.logger.Infow("Processing message",
-		"chat_id", message.Chat.ID,
-		"chat_type", message.Chat.Type,
-		"user_id", message.From.ID,
-		"username", message.From.UserName,
-		"text", message.Text,
-		"has_photo", message.Photo != nil,
-		"entities", len(message.Entities),
-	)
-
-	for i, entity := range message.Entities {
-		h.logger.Infow("Message entity",
-			"index", i,
-			"type", entity.Type,
-			"offset", entity.Offset,
-			"length", entity.Length,
-			"url", entity.URL,
-			"user", entity.User,
-		)
-	}
-
+	message := h.retrieveMessage(&update)
 	if err := h.processCommand(message); err != nil {
 		h.logger.Errorw("Failed to process message", "error", err)
 		render.ChiErr(
 			w, r, err,
 			FailedToProcessMessage,
-			render.WithStatusCode(http.StatusInternalServerError),
+			render.WithStatusCode(http.StatusOK),
 		)
 		return
 	}
@@ -143,7 +117,7 @@ func (h *TelegramHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	render.ChiJSON(w, r, map[string]string{"status": "ok"})
 }
 
-func (h *TelegramHandler) processMessage(update *tgbotapi.Update) *tgbotapi.Message {
+func (h *TelegramHandler) retrieveMessage(update *tgbotapi.Update) *tgbotapi.Message {
 	var message *tgbotapi.Message
 	if update.Message != nil {
 		message = update.Message
@@ -165,6 +139,8 @@ func (h *TelegramHandler) processMessage(update *tgbotapi.Update) *tgbotapi.Mess
 func (h *TelegramHandler) processCommand(msg *tgbotapi.Message) error {
 	cmd := msg.Command()
 
+	h.logger.Infow("Processing command", "command", cmd)
+
 	handler, exists := h.commandHandlers[commands.BotCommand(cmd)]
 	if !exists {
 		h.logger.Errorw("Command not found", "command", cmd)
@@ -185,9 +161,6 @@ func (h *TelegramHandler) processCommand(msg *tgbotapi.Message) error {
 
 // processCallback handles callback queries from inline keyboards
 func (h *TelegramHandler) processCallback(callback *tgbotapi.CallbackQuery) error {
-	// For now, only handle add_product callbacks
-	// In the future, you might want to route based on callback data
-
 	if handler, exists := h.commandHandlers[commands.AddProduct]; exists {
 		if callbackHandler, ok := handler.(commands.CallbackHandler); ok {
 			return callbackHandler.HandleCallback(callback)

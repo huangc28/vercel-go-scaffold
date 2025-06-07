@@ -8,7 +8,7 @@ import (
 type BotCommand string
 
 var (
-	AddProduct BotCommand = "add_product"
+	AddProduct BotCommand = "add"
 )
 
 type CommandHandler interface {

@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -48,21 +47,9 @@ func (cmd *CommandDAO) GetUserSession(ctx context.Context, userID int64, session
 	`
 
 	var session UserSession
-	err := cmd.db.QueryRow(query, userID, sessionType).Scan(
-		&session.ID,
-		&session.ChatID,
-		&session.UserID,
-		&session.SessionType,
-		&session.State,
-		&session.CreatedAt,
-		&session.UpdatedAt,
-		&session.ExpiresAt,
-	)
+	err := cmd.db.QueryRowx(query, userID, sessionType).StructScan(&session)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil // No session found
-		}
 		return nil, err
 	}
 
@@ -70,7 +57,7 @@ func (cmd *CommandDAO) GetUserSession(ctx context.Context, userID int64, session
 }
 
 // CreateUserSession creates a new user session
-func (cmd *CommandDAO) CreateUserSession(ctx context.Context, chatID, userID int64, sessionType string, state interface{}) error {
+func (cmd *CommandDAO) UpsertUserSession(ctx context.Context, chatID, userID int64, sessionType string, state interface{}) error {
 	stateJSON, err := json.Marshal(state)
 	if err != nil {
 		return err
@@ -88,7 +75,7 @@ func (cmd *CommandDAO) CreateUserSession(ctx context.Context, chatID, userID int
 	`
 
 	expiresAt := time.Now().Add(24 * time.Hour)
-	_, err = cmd.db.Exec(query, chatID, userID, sessionType, stateJSON, expiresAt)
+	_, err = cmd.db.Exec(query, chatID, userID, sessionType, string(stateJSON), expiresAt)
 	return err
 }
 

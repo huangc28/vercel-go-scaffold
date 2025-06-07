@@ -23,6 +23,7 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 		fx.Provide(
 			commands.NewCommandDAO,
 			commands.NewProductDAO,
+			telegram.NewBotAPI,
 		),
 
 		fx.Provide(

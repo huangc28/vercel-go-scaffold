@@ -2,11 +2,14 @@ package commands
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/fx"
+	"go.uber.org/zap"
 )
 
 // Message constants for better maintainability
@@ -27,6 +30,7 @@ type AddProductCommand struct {
 	dao        *CommandDAO
 	productDAO *ProductDAO
 	botAPI     *tgbotapi.BotAPI
+	logger     *zap.SugaredLogger
 }
 
 type AddProductCommandParams struct {
@@ -35,6 +39,7 @@ type AddProductCommandParams struct {
 	DAO        *CommandDAO
 	ProductDAO *ProductDAO
 	BotAPI     *tgbotapi.BotAPI
+	Logger     *zap.SugaredLogger
 }
 
 // UserState represents the product data and current input
@@ -60,6 +65,7 @@ func NewAddProductCommand(p AddProductCommandParams) *AddProductCommand {
 		dao:        p.DAO,
 		productDAO: p.ProductDAO,
 		botAPI:     p.BotAPI,
+		logger:     p.Logger,
 	}
 }
 
@@ -75,42 +81,29 @@ func (c *AddProductCommand) Handle(msg *tgbotapi.Message) error {
 		return fmt.Errorf("failed to get user state: %w", err)
 	}
 
-	if state == nil {
-		return c.sendMessage(chatID, msgUseAddProduct)
-	}
-
 	return c.processUserInput(ctx, userID, chatID, state, msg)
 }
 
 // processUserInput handles FSM logic - extracted for better readability
 func (c *AddProductCommand) processUserInput(ctx context.Context, userID, chatID int64, state *UserState, msg *tgbotapi.Message) error {
 	userFSM := NewAddProductFSM(c, userID, chatID, state, msg)
-	userFSM.SetState(state.FSMState)
+	availEvents := userFSM.AvailableTransitions()
 
-	event := c.determineEvent(msg.Text, userFSM.Current(), msg)
-	state.CurrentInput = msg.Text
-
-	if err := userFSM.Event(ctx, event); err != nil {
-		return c.handleFSMError(err, chatID, userFSM.Current(), msg.Text, state, event)
+	if len(availEvents) == 0 {
+		return fmt.Errorf("Check your FSM configuration, no available events on current state: %s", state.FSMState)
 	}
 
-	state.FSMState = userFSM.Current()
-	return c.saveStateIfNeeded(ctx, userID, state)
-}
+	c.logger.Infow(
+		"Available events",
+		"events", availEvents,
+		"current state", state.FSMState,
+	)
 
-// handleFSMError provides centralized error handling
-func (c *AddProductCommand) handleFSMError(err error, chatID int64, currentState, input string, state *UserState, event string) error {
-	switch err.Error() {
-	case "invalid price format", "invalid stock format":
-		return c.handleInvalidInput(chatID, currentState, input)
-	case "maximum images reached":
-		return c.sendMessage(chatID, fmt.Sprintf(errMaxImages, len(state.ImageFileIDs)))
-	default:
-		if err.Error() == "event "+event+" inappropriate in current state "+currentState {
-			return c.handleInvalidInput(chatID, currentState, input)
-		}
-		return fmt.Errorf("FSM event error: %w", err)
+	if err := userFSM.Event(ctx, availEvents[0]); err != nil {
+		return fmt.Errorf("FSM event error: %w, current state: %s, event applied: %s", err, state.FSMState, availEvents[0])
 	}
+
+	return nil
 }
 
 // saveStateIfNeeded handles state persistence logic
@@ -125,39 +118,52 @@ func (c *AddProductCommand) saveStateIfNeeded(ctx context.Context, userID int64,
 
 // getOrCreateUserState retrieves existing session or creates new one
 func (c *AddProductCommand) getOrCreateUserState(ctx context.Context, userID int64, chatID int64, text string) (*UserState, error) {
-	// Try to get existing session
 	session, err := c.dao.GetUserSession(ctx, userID, "add_product")
-	if err != nil {
+
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("failed to get user session: %w", err)
 	}
 
-	if session == nil {
-		// If no session exists and command is /add_product, create new one
-		if text == "/add_product" {
-			state := &UserState{FSMState: StateInit}
-			if err := c.dao.CreateUserSession(ctx, chatID, userID, "add_product", state); err != nil {
-				return nil, fmt.Errorf("failed to create user session: %w", err)
-			}
-			c.sendMessage(chatID, msgStartFlow)
-			return state, nil
+	var state *UserState
+	if errors.Is(err, sql.ErrNoRows) {
+		state = &UserState{
+			FSMState:     StateInit,
+			Product:      ProductData{},
+			Specs:        []string{},
+			ImageFileIDs: []string{},
+			CurrentInput: "",
 		}
-		return nil, nil
+
+		stateJSON, err := json.Marshal(state)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal state: %w", err)
+		}
+
+		session = &UserSession{
+			ChatID:      chatID,
+			UserID:      userID,
+			SessionType: "add_product",
+			State:       stateJSON,
+		}
+
+		if err := c.dao.UpsertUserSession(ctx, chatID, userID, "add_product", session); err != nil {
+			return nil, fmt.Errorf("failed to create user session: %w", err)
+		}
+
+		c.sendMessage(chatID, msgStartFlow)
+
+		return state, nil
 	}
 
-	// Parse existing session state
-	var state UserState
 	if err := json.Unmarshal(session.State, &state); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal session state: %w", err)
 	}
 
-	// Handle resume for existing session
-	if text == "/add_product" {
-		currentStepMsg := c.getStepDescription(state.FSMState)
-		resumeMsg := fmt.Sprintf(msgResumeFlow, currentStepMsg)
-		c.sendMessage(chatID, resumeMsg)
-	}
+	// currentStepMsg := c.getStepDescription(state.FSMState)
+	// resumeMsg := fmt.Sprintf(msgResumeFlow, currentStepMsg)
+	// c.sendMessage(chatID, resumeMsg)
 
-	return &state, nil
+	return state, nil
 }
 
 // sendMessage sends a text message to the chat
@@ -167,38 +173,49 @@ func (c *AddProductCommand) sendMessage(chatID int64, text string) error {
 	return err
 }
 
-// sendMessageWithButtons sends a message with inline keyboard buttons
-func (c *AddProductCommand) sendMessageWithButtons(chatID int64, text string, step string) error {
+func (c *AddProductCommand) sendMessageWithButtons(chatID int64, text, step string) error {
 	msg := tgbotapi.NewMessage(chatID, text)
 
 	// Create keyboard based on step type
-	var keyboard tgbotapi.InlineKeyboardMarkup
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("✅ 完成", fmt.Sprintf("done_%s", step)),
+			tgbotapi.NewInlineKeyboardButtonData("⏭️ 跳過", fmt.Sprintf("skip_%s", step)),
+		),
 
-	if c.canSkipStep(step) {
-		if c.needsDoneButton(step) {
-			// For steps that need a "Done" button (specs, images)
-			keyboard = tgbotapi.NewInlineKeyboardMarkup(
-				tgbotapi.NewInlineKeyboardRow(
-					tgbotapi.NewInlineKeyboardButtonData("✅ 完成", fmt.Sprintf("done_%s", step)),
-					tgbotapi.NewInlineKeyboardButtonData("⏭️ 跳過", fmt.Sprintf("skip_%s", step)),
-				),
-				tgbotapi.NewInlineKeyboardRow(
-					tgbotapi.NewInlineKeyboardButtonData("❌ 取消", "cancel"),
-					tgbotapi.NewInlineKeyboardButtonData("💾 暫存", "pause"),
-				),
-			)
-		} else {
-			// For other skippable steps (description)
-			keyboard = tgbotapi.NewInlineKeyboardMarkup(
-				tgbotapi.NewInlineKeyboardRow(
-					tgbotapi.NewInlineKeyboardButtonData("❌ 取消", "cancel"),
-					tgbotapi.NewInlineKeyboardButtonData("⏭️ 跳過", fmt.Sprintf("skip_%s", step)),
-					tgbotapi.NewInlineKeyboardButtonData("💾 暫存", "pause"),
-				),
-			)
-		}
-		msg.ReplyMarkup = keyboard
-	}
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("❌ 取消", "cancel"),
+			tgbotapi.NewInlineKeyboardButtonData("💾 暫存", "pause"),
+		),
+	)
+
+	msg.ReplyMarkup = keyboard
+
+	// if c.canSkipStep(step) {
+	// 	if c.needsDoneButton(step) {
+	// 		// For steps that need a "Done" button (specs, images)
+	// 		keyboard = tgbotapi.NewInlineKeyboardMarkup(
+	// 			tgbotapi.NewInlineKeyboardRow(
+	// 				tgbotapi.NewInlineKeyboardButtonData("✅ 完成", fmt.Sprintf("done_%s", step)),
+	// 				tgbotapi.NewInlineKeyboardButtonData("⏭️ 跳過", fmt.Sprintf("skip_%s", step)),
+	// 			),
+	// 			tgbotapi.NewInlineKeyboardRow(
+	// 				tgbotapi.NewInlineKeyboardButtonData("❌ 取消", "cancel"),
+	// 				tgbotapi.NewInlineKeyboardButtonData("💾 暫存", "pause"),
+	// 			),
+	// 		)
+	// 	} else {
+	// 		// For other skippable steps (description)
+	// 		keyboard = tgbotapi.NewInlineKeyboardMarkup(
+	// 			tgbotapi.NewInlineKeyboardRow(
+	// 				tgbotapi.NewInlineKeyboardButtonData("❌ 取消", "cancel"),
+	// 				tgbotapi.NewInlineKeyboardButtonData("⏭️ 跳過", fmt.Sprintf("skip_%s", step)),
+	// 				tgbotapi.NewInlineKeyboardButtonData("💾 暫存", "pause"),
+	// 			),
+	// 		)
+	// 	}
+	// 	msg.ReplyMarkup = keyboard
+	// }
 
 	_, err := c.botAPI.Send(msg)
 	return err

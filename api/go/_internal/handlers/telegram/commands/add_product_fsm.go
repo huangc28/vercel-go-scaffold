@@ -32,23 +32,6 @@ const (
 	msgInvalidInput = "❌ 輸入格式錯誤，請重新輸入："
 )
 
-// FSM States
-const (
-	StateInit        = "init"
-	StateSKU         = "sku"
-	StateName        = "name"
-	StateCategory    = "category"
-	StatePrice       = "price"
-	StateStock       = "stock"
-	StateDescription = "description"
-	StateSpecs       = "specs"
-	StateImages      = "images"
-	StateConfirm     = "confirm"
-	StateCompleted   = "completed"
-	StateCancelled   = "cancelled"
-	StatePaused      = "paused"
-)
-
 // FSM Events
 const (
 	EventStart   = "start"
@@ -141,41 +124,6 @@ func NewAddProductFSM(c *AddProductCommand, userID, chatID int64, state *UserSta
 	)
 }
 
-// determineEvent maps user input to FSM events
-func (c *AddProductCommand) determineEvent(text, currentState string, msg *tgbotapi.Message) string {
-	// Handle global commands
-	switch text {
-	case "/cancel":
-		return EventCancel
-	case "/restart":
-		return EventRestart
-	case "/add_product":
-		if currentState == StateInit {
-			return EventStart
-		}
-		return EventResume
-	case "/done":
-		if currentState == StateSpecs || currentState == StateImages {
-			return EventDone
-		}
-	}
-
-	// Handle confirmation (button data handled in HandleCallback)
-	if currentState == StateConfirm {
-		// Only allow button interactions for confirmation
-		// Text input is ignored in confirmation state
-		return EventNext // Will be ignored by FSM since no valid transition exists
-	}
-
-	// Handle image uploads
-	if currentState == StateImages && msg.Photo != nil {
-		return EventNext
-	}
-
-	// Default to next for text input
-	return EventNext
-}
-
 // FSM State Entry Callbacks
 
 func (c *AddProductCommand) enterSKU(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
@@ -183,31 +131,31 @@ func (c *AddProductCommand) enterSKU(ctx context.Context, e *fsm.Event, fsmCtx *
 }
 
 func (c *AddProductCommand) enterName(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessage(fsmCtx.ChatID, promptName)
+	c.sendMessageWithButtons(fsmCtx.ChatID, promptName, StateName)
 }
 
 func (c *AddProductCommand) enterCategory(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessage(fsmCtx.ChatID, promptCategory)
+	c.sendMessageWithButtons(fsmCtx.ChatID, promptCategory, StateCategory)
 }
 
 func (c *AddProductCommand) enterPrice(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessage(fsmCtx.ChatID, promptPrice)
+	c.sendMessageWithButtons(fsmCtx.ChatID, promptPrice, StatePrice)
 }
 
 func (c *AddProductCommand) enterStock(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessage(fsmCtx.ChatID, promptStock)
+	c.sendMessageWithButtons(fsmCtx.ChatID, promptStock, StateStock)
 }
 
 func (c *AddProductCommand) enterDescription(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessageWithButtons(fsmCtx.ChatID, promptDescription, "description")
+	c.sendMessageWithButtons(fsmCtx.ChatID, promptDescription, StateDescription)
 }
 
 func (c *AddProductCommand) enterSpecs(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessageWithButtons(fsmCtx.ChatID, promptSpecs, "specs")
+	c.sendMessageWithButtons(fsmCtx.ChatID, promptSpecs, StateSpecs)
 }
 
 func (c *AddProductCommand) enterImages(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessageWithButtons(fsmCtx.ChatID, promptImages, "images")
+	c.sendMessageWithButtons(fsmCtx.ChatID, promptImages, StateImages)
 }
 
 func (c *AddProductCommand) enterConfirm(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
