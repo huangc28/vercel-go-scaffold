@@ -48,7 +48,7 @@ func (cmd *CommandDAO) GetUserSession(ctx context.Context, userID int64, session
 	`
 
 	var session UserSession
-	err := cmd.db.QueryRow(ctx, query, userID, sessionType).Scan(
+	err := cmd.db.QueryRow(query, userID, sessionType).Scan(
 		&session.ID,
 		&session.ChatID,
 		&session.UserID,

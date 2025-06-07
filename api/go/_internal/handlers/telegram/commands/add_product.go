@@ -7,7 +7,39 @@ import (
 	"strconv"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/looplab/fsm"
 	"go.uber.org/fx"
+)
+
+// FSM States
+const (
+	StateInit        = "init"
+	StateSKU         = "sku"
+	StateName        = "name"
+	StateCategory    = "category"
+	StatePrice       = "price"
+	StateStock       = "stock"
+	StateDescription = "description"
+	StateSpecs       = "specs"
+	StateImages      = "images"
+	StateConfirm     = "confirm"
+	StateCompleted   = "completed"
+	StateCancelled   = "cancelled"
+	StatePaused      = "paused"
+)
+
+// FSM Events
+const (
+	EventStart   = "start"
+	EventNext    = "next"
+	EventSkip    = "skip"
+	EventDone    = "done"
+	EventCancel  = "cancel"
+	EventRestart = "restart"
+	EventConfirm = "confirm"
+	EventReject  = "reject"
+	EventPause   = "pause"
+	EventResume  = "resume"
 )
 
 type AddProductCommand struct {
@@ -24,12 +56,13 @@ type AddProductCommandParams struct {
 	BotAPI     *tgbotapi.BotAPI
 }
 
-// UserState represents the current state of product creation process
+// UserState represents the product data and current input
 type UserState struct {
-	Step         string      `json:"step"`
 	Product      ProductData `json:"product"`
 	Specs        []string    `json:"specs"`
 	ImageFileIDs []string    `json:"image_file_ids"`
+	CurrentInput string      `json:"current_input"`
+	FSMState     string      `json:"fsm_state"`
 }
 
 type ProductData struct {
@@ -41,6 +74,15 @@ type ProductData struct {
 	Description string  `json:"description"`
 }
 
+// FSMContext holds context for FSM callbacks
+type FSMContext struct {
+	UserID  int64
+	ChatID  int64
+	Message *tgbotapi.Message
+	State   *UserState
+	Command *AddProductCommand
+}
+
 func NewAddProductCommand(p AddProductCommandParams) *AddProductCommand {
 	return &AddProductCommand{
 		dao:        p.DAO,
@@ -49,17 +91,14 @@ func NewAddProductCommand(p AddProductCommandParams) *AddProductCommand {
 	}
 }
 
-// Before complete creating product, user can choose
-//  1. 取消 ---> Remove `add_product` type of this userID session in DB
-//  2. 跳過 ---> Skip current step, give empty value
-//  3. 暫存 ---> Save state, quit, user can resume by /.add_product, it will resume from the step user left off
+// Handle processes incoming messages using FSM
 func (c *AddProductCommand) Handle(msg *tgbotapi.Message) error {
 	ctx := context.Background()
 	userID := msg.From.ID
 	chatID := msg.Chat.ID
 	text := msg.Text
 
-	// Retrieve or create user session state
+	// Get or create user state
 	state, err := c.getOrCreateUserState(ctx, userID, chatID, text)
 	if err != nil {
 		return fmt.Errorf("failed to get user state: %w", err)
@@ -69,17 +108,151 @@ func (c *AddProductCommand) Handle(msg *tgbotapi.Message) error {
 		return c.sendMessage(chatID, "請使用 /add_product 開始上架商品。")
 	}
 
-	// Handle different steps in the state machine
-	if err := c.handleStateStep(ctx, state, text, userID, chatID, msg); err != nil {
-		return err
+	// Create FSM instance
+	userFSM := c.createFSM(userID, chatID, state, msg)
+
+	// Set current FSM state
+	userFSM.SetState(state.FSMState)
+
+	// Determine event based on input and current state
+	event := c.determineEvent(text, userFSM.Current(), msg)
+
+	// Store input for validation
+	state.CurrentInput = text
+
+	// Trigger FSM event
+	if err := userFSM.Event(ctx, event); err != nil {
+		// Handle FSM errors (invalid transitions, validation errors, etc.)
+		if err.Error() == "event "+event+" inappropriate in current state "+userFSM.Current() {
+			return c.handleInvalidInput(chatID, userFSM.Current(), text)
+		}
+		// Handle validation errors
+		if err.Error() == "invalid price format" || err.Error() == "invalid stock format" {
+			return c.handleInvalidInput(chatID, userFSM.Current(), text)
+		}
+		if err.Error() == "maximum images reached" {
+			return c.sendMessage(chatID, fmt.Sprintf("❌ 最多只能上傳 5 張圖片，目前已上傳 %d 張", len(state.ImageFileIDs)))
+		}
+		return fmt.Errorf("FSM event error: %w", err)
 	}
 
-	// Save updated state back to database
-	if err := c.dao.UpdateUserSession(ctx, userID, "add_product", state); err != nil {
-		return fmt.Errorf("failed to save user state: %w", err)
+	// Update FSM state in user state
+	state.FSMState = userFSM.Current()
+
+	// Save updated state (only if not completed or cancelled)
+	if state.FSMState != StateCompleted && state.FSMState != StateCancelled {
+		if err := c.dao.UpdateUserSession(ctx, userID, "add_product", state); err != nil {
+			return fmt.Errorf("failed to save user state: %w", err)
+		}
 	}
 
 	return nil
+}
+
+// createFSM creates a new FSM instance with all events and callbacks
+func (c *AddProductCommand) createFSM(userID, chatID int64, state *UserState, msg *tgbotapi.Message) *fsm.FSM {
+	fsmCtx := &FSMContext{
+		UserID:  userID,
+		ChatID:  chatID,
+		Message: msg,
+		State:   state,
+		Command: c,
+	}
+
+	return fsm.NewFSM(
+		StateInit,
+		fsm.Events{
+			// Start flow
+			{Name: EventStart, Src: []string{StateInit}, Dst: StateSKU},
+
+			// Normal progression
+			{Name: EventNext, Src: []string{StateSKU}, Dst: StateName},
+			{Name: EventNext, Src: []string{StateName}, Dst: StateCategory},
+			{Name: EventNext, Src: []string{StateCategory}, Dst: StatePrice},
+			{Name: EventNext, Src: []string{StatePrice}, Dst: StateStock},
+			{Name: EventNext, Src: []string{StateStock}, Dst: StateDescription},
+			{Name: EventNext, Src: []string{StateDescription}, Dst: StateSpecs},
+			{Name: EventNext, Src: []string{StateSpecs}, Dst: StateSpecs},   // Stay in specs for multiple entries
+			{Name: EventNext, Src: []string{StateImages}, Dst: StateImages}, // Stay in images for multiple uploads
+
+			// Skip optional states
+			{Name: EventSkip, Src: []string{StateDescription}, Dst: StateSpecs},
+			{Name: EventSkip, Src: []string{StateSpecs}, Dst: StateImages},
+			{Name: EventSkip, Src: []string{StateImages}, Dst: StateConfirm},
+
+			// Done events for multi-input states
+			{Name: EventDone, Src: []string{StateSpecs}, Dst: StateImages},
+			{Name: EventDone, Src: []string{StateImages}, Dst: StateConfirm},
+
+			// Confirmation
+			{Name: EventConfirm, Src: []string{StateConfirm}, Dst: StateCompleted},
+			{Name: EventReject, Src: []string{StateConfirm}, Dst: StateCancelled},
+
+			// Global events
+			{Name: EventCancel, Src: []string{"*"}, Dst: StateCancelled},
+			{Name: EventRestart, Src: []string{"*"}, Dst: StateSKU},
+			{Name: EventPause, Src: []string{"*"}, Dst: StatePaused},
+			{Name: EventResume, Src: []string{"*"}, Dst: "*"}, // Resume from where left off
+		},
+		fsm.Callbacks{
+			// Enter state callbacks (send prompts)
+			"enter_" + StateSKU:         func(ctx context.Context, e *fsm.Event) { c.enterSKU(ctx, e, fsmCtx) },
+			"enter_" + StateName:        func(ctx context.Context, e *fsm.Event) { c.enterName(ctx, e, fsmCtx) },
+			"enter_" + StateCategory:    func(ctx context.Context, e *fsm.Event) { c.enterCategory(ctx, e, fsmCtx) },
+			"enter_" + StatePrice:       func(ctx context.Context, e *fsm.Event) { c.enterPrice(ctx, e, fsmCtx) },
+			"enter_" + StateStock:       func(ctx context.Context, e *fsm.Event) { c.enterStock(ctx, e, fsmCtx) },
+			"enter_" + StateDescription: func(ctx context.Context, e *fsm.Event) { c.enterDescription(ctx, e, fsmCtx) },
+			"enter_" + StateSpecs:       func(ctx context.Context, e *fsm.Event) { c.enterSpecs(ctx, e, fsmCtx) },
+			"enter_" + StateImages:      func(ctx context.Context, e *fsm.Event) { c.enterImages(ctx, e, fsmCtx) },
+			"enter_" + StateConfirm:     func(ctx context.Context, e *fsm.Event) { c.enterConfirm(ctx, e, fsmCtx) },
+			"enter_" + StateCompleted:   func(ctx context.Context, e *fsm.Event) { c.enterCompleted(ctx, e, fsmCtx) },
+			"enter_" + StateCancelled:   func(ctx context.Context, e *fsm.Event) { c.enterCancelled(ctx, e, fsmCtx) },
+			"enter_" + StatePaused:      func(ctx context.Context, e *fsm.Event) { c.enterPaused(ctx, e, fsmCtx) },
+
+			// Before event callbacks (validation)
+			"before_" + EventNext: func(ctx context.Context, e *fsm.Event) { c.validateInput(ctx, e, fsmCtx) },
+
+			// After event callbacks (data storage)
+			"after_" + EventNext: func(ctx context.Context, e *fsm.Event) { c.storeInput(ctx, e, fsmCtx) },
+		},
+	)
+}
+
+// determineEvent maps user input to FSM events
+func (c *AddProductCommand) determineEvent(text, currentState string, msg *tgbotapi.Message) string {
+	// Handle global commands
+	switch text {
+	case "/cancel":
+		return EventCancel
+	case "/restart":
+		return EventRestart
+	case "/add_product":
+		if currentState == StateInit {
+			return EventStart
+		}
+		return EventResume
+	case "/done":
+		if currentState == StateSpecs || currentState == StateImages {
+			return EventDone
+		}
+	}
+
+	// Handle confirmation
+	if currentState == StateConfirm {
+		if text == "確認" {
+			return EventConfirm
+		} else if text == "取消" {
+			return EventReject
+		}
+	}
+
+	// Handle image uploads
+	if currentState == StateImages && msg.Photo != nil {
+		return EventNext
+	}
+
+	// Default to next for text input
+	return EventNext
 }
 
 // getOrCreateUserState retrieves existing session or creates new one
@@ -92,14 +265,15 @@ func (c *AddProductCommand) getOrCreateUserState(ctx context.Context, userID int
 
 	if session == nil {
 		// If no session exists and command is /add_product, create new one
-		state := &UserState{Step: "sku"}
-		if err := c.dao.CreateUserSession(ctx, chatID, userID, "add_product", state); err != nil {
-			return nil, fmt.Errorf("failed to create user session: %w", err)
+		if text == "/add_product" {
+			state := &UserState{FSMState: StateInit}
+			if err := c.dao.CreateUserSession(ctx, chatID, userID, "add_product", state); err != nil {
+				return nil, fmt.Errorf("failed to create user session: %w", err)
+			}
+			c.sendMessage(chatID, "🆕 開始新的商品上架流程")
+			return state, nil
 		}
-		// Inform user about new session
-		c.sendMessage(chatID, "🆕 開始新的商品上架流程")
-		c.sendMessage(chatID, "請輸入商品 SKU：")
-		return state, nil
+		return nil, nil
 	}
 
 	// Parse existing session state
@@ -108,120 +282,149 @@ func (c *AddProductCommand) getOrCreateUserState(ctx context.Context, userID int
 		return nil, fmt.Errorf("failed to unmarshal session state: %w", err)
 	}
 
-	// Inform user about existing session when they use /add_product command
-	currentStepMsg := c.getStepDescription(state.Step)
-	resumeMsg := fmt.Sprintf("📋 發現未完成的商品上架流程\n當前步驟: %s\n\n您可以:\n• 繼續輸入以完成當前步驟\n• 輸入 /cancel 取消流程\n• 輸入 /restart 重新開始", currentStepMsg)
-	c.sendMessage(chatID, resumeMsg)
-
-	// Send the prompt for current step
-	stepPrompt := c.getStepPrompt(state.Step)
-	if stepPrompt != "" {
-		c.sendMessage(chatID, stepPrompt)
+	// Handle resume for existing session
+	if text == "/add_product" {
+		currentStepMsg := c.getStepDescription(state.FSMState)
+		resumeMsg := fmt.Sprintf("📋 發現未完成的商品上架流程\n當前步驟: %s\n\n您可以:\n• 繼續輸入以完成當前步驟\n• 輸入 /cancel 取消流程\n• 輸入 /restart 重新開始", currentStepMsg)
+		c.sendMessage(chatID, resumeMsg)
 	}
 
 	return &state, nil
 }
 
-// handleStateStep processes the current step in the state machine
-func (c *AddProductCommand) handleStateStep(ctx context.Context, state *UserState, text string, userID int64, chatID int64, msg *tgbotapi.Message) error {
-	// Handle special commands first
-	switch text {
-	case "/cancel":
-		c.sendMessage(chatID, "❌ 已取消商品上架流程")
-		return c.dao.DeleteUserSession(ctx, userID, "add_product")
-	case "/restart":
-		c.sendMessage(chatID, "🔄 重新開始商品上架流程")
-		// Reset state to beginning
-		state.Step = "sku"
-		state.Product = ProductData{}
-		state.Specs = []string{}
-		state.ImageFileIDs = []string{}
-		return c.sendMessage(chatID, "請輸入商品 SKU：")
-	}
+// FSM State Entry Callbacks
 
-	switch state.Step {
-	case "sku":
-		state.Product.SKU = text
-		state.Step = "name"
-		return c.sendMessage(chatID, "請輸入商品名稱：")
-	case "name":
-		state.Product.Name = text
-		state.Step = "category"
-		return c.sendMessage(chatID, "請輸入商品類別：")
-	case "category":
-		state.Product.Category = text
-		state.Step = "price"
-		return c.sendMessage(chatID, "請輸入商品價格：")
-	case "price":
-		price, err := strconv.ParseFloat(text, 64)
-		if err != nil {
-			return c.sendMessage(chatID, "❌ 價格格式錯誤，請輸入數字：")
+func (c *AddProductCommand) enterSKU(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+	c.sendMessage(fsmCtx.ChatID, "請輸入商品 SKU：")
+}
+
+func (c *AddProductCommand) enterName(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+	c.sendMessage(fsmCtx.ChatID, "請輸入商品名稱：")
+}
+
+func (c *AddProductCommand) enterCategory(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+	c.sendMessage(fsmCtx.ChatID, "請輸入商品類別：")
+}
+
+func (c *AddProductCommand) enterPrice(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+	c.sendMessage(fsmCtx.ChatID, "請輸入商品價格：")
+}
+
+func (c *AddProductCommand) enterStock(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+	c.sendMessage(fsmCtx.ChatID, "請輸入商品庫存數量：")
+}
+
+func (c *AddProductCommand) enterDescription(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+	c.sendMessageWithButtons(fsmCtx.ChatID, "請輸入商品描述：", "description")
+}
+
+func (c *AddProductCommand) enterSpecs(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+	c.sendMessageWithButtons(fsmCtx.ChatID, "請輸入商品規格（每行一項）：", "specs")
+}
+
+func (c *AddProductCommand) enterImages(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+	c.sendMessageWithButtons(fsmCtx.ChatID, "請上傳商品圖片（最多 5 張）：", "images")
+}
+
+func (c *AddProductCommand) enterConfirm(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+	c.sendSummary(fsmCtx.ChatID, fsmCtx.State)
+}
+
+func (c *AddProductCommand) enterCompleted(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+	if err := c.productDAO.SaveProduct(ctx, fsmCtx.State); err != nil {
+		c.sendMessage(fsmCtx.ChatID, "❌ 儲存失敗："+err.Error())
+	} else {
+		c.sendMessage(fsmCtx.ChatID, "🎉 商品已成功上架！")
+	}
+	// Clean up session
+	c.dao.DeleteUserSession(ctx, fsmCtx.UserID, "add_product")
+}
+
+func (c *AddProductCommand) enterCancelled(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+	c.sendMessage(fsmCtx.ChatID, "❌ 已取消商品上架流程")
+	// Clean up session
+	c.dao.DeleteUserSession(ctx, fsmCtx.UserID, "add_product")
+}
+
+func (c *AddProductCommand) enterPaused(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+	c.sendMessage(fsmCtx.ChatID, "💾 流程已暫存，您可以稍後使用 /add_product 繼續")
+}
+
+// FSM Event Callbacks
+
+// validateInput checks if input is valid before proceeding with FSM event
+func (c *AddProductCommand) validateInput(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+	switch e.Src {
+	case StatePrice:
+		if _, err := strconv.ParseFloat(fsmCtx.State.CurrentInput, 64); err != nil {
+			// Return error to prevent state transition
+			e.Cancel(fmt.Errorf("invalid price format"))
+			return
 		}
-		state.Product.Price = price
-		state.Step = "stock"
-		return c.sendMessage(chatID, "請輸入商品庫存數量：")
-	case "stock":
-		stock, err := strconv.Atoi(text)
-		if err != nil {
-			return c.sendMessage(chatID, "❌ 庫存格式錯誤，請輸入整數：")
+	case StateStock:
+		if _, err := strconv.Atoi(fsmCtx.State.CurrentInput); err != nil {
+			e.Cancel(fmt.Errorf("invalid stock format"))
+			return
 		}
-		state.Product.Stock = stock
-		state.Step = "description"
-		return c.sendMessageWithButtons(chatID, "請輸入商品描述：", "description")
-	case "description":
-		state.Product.Description = text
-		state.Step = "specs"
-		return c.sendMessageWithButtons(chatID, "請輸入商品規格（每行一項）：", "specs")
-	case "specs":
-		if text == "/done" {
-			state.Step = "images"
-			return c.sendMessageWithButtons(chatID, "請上傳商品圖片（最多 5 張）：", "images")
+	case StateImages:
+		if fsmCtx.Message != nil && fsmCtx.Message.Photo != nil && len(fsmCtx.State.ImageFileIDs) >= 5 {
+			e.Cancel(fmt.Errorf("maximum images reached"))
+			return
 		}
-		state.Specs = append(state.Specs, text)
-		return c.sendMessage(chatID, "✅ 規格已新增，繼續輸入或點擊「完成」按鈕：")
-	case "images":
-		if text == "/done" {
-			if len(state.ImageFileIDs) == 0 {
-				return c.sendMessage(chatID, "⚠️ 請至少上傳一張商品圖片，或點擊「跳過」按鈕")
-			}
-			state.Step = "confirm"
-			return c.sendSummary(chatID, state)
-		} else if msg.Photo != nil {
-			// Check if maximum limit reached
+	}
+}
+
+func (c *AddProductCommand) storeInput(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+	switch e.Src {
+	case StateSKU:
+		fsmCtx.State.Product.SKU = fsmCtx.State.CurrentInput
+	case StateName:
+		fsmCtx.State.Product.Name = fsmCtx.State.CurrentInput
+	case StateCategory:
+		fsmCtx.State.Product.Category = fsmCtx.State.CurrentInput
+	case StatePrice:
+		price, _ := strconv.ParseFloat(fsmCtx.State.CurrentInput, 64)
+		fsmCtx.State.Product.Price = price
+	case StateStock:
+		stock, _ := strconv.Atoi(fsmCtx.State.CurrentInput)
+		fsmCtx.State.Product.Stock = stock
+	case StateDescription:
+		fsmCtx.State.Product.Description = fsmCtx.State.CurrentInput
+	case StateSpecs:
+		if fsmCtx.State.CurrentInput != "/done" {
+			fsmCtx.State.Specs = append(fsmCtx.State.Specs, fsmCtx.State.CurrentInput)
+			// Send feedback for specs
+			c.sendMessage(fsmCtx.ChatID, "✅ 規格已新增，繼續輸入或點擊「完成」按鈕：")
+		}
+	case StateImages:
+		if fsmCtx.Message != nil && fsmCtx.Message.Photo != nil {
+			fileID := fsmCtx.Message.Photo[len(fsmCtx.Message.Photo)-1].FileID
+			fsmCtx.State.ImageFileIDs = append(fsmCtx.State.ImageFileIDs, fileID)
+
+			// Send feedback for images
 			const maxImages = 5
-			if len(state.ImageFileIDs) >= maxImages {
-				return c.sendMessage(chatID, fmt.Sprintf("❌ 最多只能上傳 %d 張圖片，目前已上傳 %d 張\n輸入 /done 完成上傳", maxImages, len(state.ImageFileIDs)))
-			}
-
-			fileID := msg.Photo[len(msg.Photo)-1].FileID
-			state.ImageFileIDs = append(state.ImageFileIDs, fileID)
-
-			remaining := maxImages - len(state.ImageFileIDs)
+			remaining := maxImages - len(fsmCtx.State.ImageFileIDs)
 			if remaining > 0 {
-				return c.sendMessage(chatID, fmt.Sprintf("✅ 圖片已上傳 (%d/%d)，還可上傳 %d 張或點擊「完成」按鈕", len(state.ImageFileIDs), maxImages, remaining))
+				c.sendMessage(fsmCtx.ChatID, fmt.Sprintf("✅ 圖片已上傳 (%d/%d)，還可上傳 %d 張或點擊「完成」按鈕", len(fsmCtx.State.ImageFileIDs), maxImages, remaining))
 			} else {
-				return c.sendMessage(chatID, fmt.Sprintf("✅ 圖片已上傳 (%d/%d)，已達上限！點擊「完成」按鈕", len(state.ImageFileIDs), maxImages))
+				c.sendMessage(fsmCtx.ChatID, fmt.Sprintf("✅ 圖片已上傳 (%d/%d)，已達上限！點擊「完成」按鈕", len(fsmCtx.State.ImageFileIDs), maxImages))
 			}
-		}
-		return c.sendMessage(chatID, fmt.Sprintf("請上傳商品圖片（最多 %d 張，目前 %d 張），點擊「完成」按鈕：", 5, len(state.ImageFileIDs)))
-	case "confirm":
-		if text == "確認" {
-			if err := c.productDAO.SaveProduct(ctx, state); err != nil {
-				return c.sendMessage(chatID, "❌ 儲存失敗："+err.Error())
-			} else {
-				c.sendMessage(chatID, "🎉 商品已成功上架！")
-			}
-			// Clean up session
-			return c.dao.DeleteUserSession(ctx, userID, "add_product")
-		} else if text == "取消" {
-			c.sendMessage(chatID, "❌ 已取消上架流程。")
-			return c.dao.DeleteUserSession(ctx, userID, "add_product")
-		} else {
-			return c.sendMessage(chatID, "請輸入「確認」或「取消」：")
 		}
 	}
+}
 
-	return nil
+// handleInvalidInput handles invalid input for current state
+func (c *AddProductCommand) handleInvalidInput(chatID int64, currentState, input string) error {
+	switch currentState {
+	case StatePrice:
+		return c.sendMessage(chatID, "❌ 價格格式錯誤，請輸入數字：")
+	case StateStock:
+		return c.sendMessage(chatID, "❌ 庫存格式錯誤，請輸入整數：")
+	case StateImages:
+		return c.sendMessage(chatID, fmt.Sprintf("❌ 最多只能上傳 5 張圖片，目前已上傳 %d 張", 5))
+	default:
+		return c.sendMessage(chatID, "❌ 輸入格式錯誤，請重新輸入：")
+	}
 }
 
 // sendMessage sends a text message to the chat
@@ -315,43 +518,23 @@ func (c *AddProductCommand) sendSummary(chatID int64, state *UserState) error {
 }
 
 // getStepDescription returns a user-friendly description of the current step
-func (c *AddProductCommand) getStepDescription(step string) string {
+func (c *AddProductCommand) getStepDescription(state string) string {
 	descriptions := map[string]string{
-		"sku":         "輸入商品 SKU",
-		"name":        "輸入商品名稱",
-		"category":    "輸入商品類別",
-		"price":       "輸入商品價格",
-		"stock":       "輸入商品庫存數量",
-		"description": "輸入商品描述",
-		"specs":       "輸入商品規格",
-		"images":      "上傳商品圖片",
-		"confirm":     "確認商品資訊",
+		StateSKU:         "輸入商品 SKU",
+		StateName:        "輸入商品名稱",
+		StateCategory:    "輸入商品類別",
+		StatePrice:       "輸入商品價格",
+		StateStock:       "輸入商品庫存數量",
+		StateDescription: "輸入商品描述",
+		StateSpecs:       "輸入商品規格",
+		StateImages:      "上傳商品圖片",
+		StateConfirm:     "確認商品資訊",
 	}
 
-	if desc, exists := descriptions[step]; exists {
+	if desc, exists := descriptions[state]; exists {
 		return desc
 	}
 	return "未知步驟"
-}
-
-// getStepPrompt returns the prompt message for the current step
-func (c *AddProductCommand) getStepPrompt(step string) string {
-	prompts := map[string]string{
-		"sku":         "請輸入商品 SKU：",
-		"name":        "請輸入商品名稱：",
-		"category":    "請輸入商品類別：",
-		"price":       "請輸入商品價格：",
-		"stock":       "請輸入商品庫存數量：",
-		"description": "請輸入商品描述：",
-		"specs":       "請輸入商品規格（每行一項）：",
-		"images":      "請上傳商品圖片（最多 5 張）：",
-		"confirm":     "請檢查商品資訊，輸入「確認」儲存或「取消」放棄：",
-	}
-
-	if prompt, exists := prompts[step]; exists {
-		return prompt
-	}
-	return ""
 }
 
 // HandleCallback handles inline keyboard button presses
@@ -372,80 +555,40 @@ func (c *AddProductCommand) HandleCallback(callback *tgbotapi.CallbackQuery) err
 		return err
 	}
 
+	// Create FSM instance and set current state
+	userFSM := c.createFSM(userID, chatID, &state, nil)
+	userFSM.SetState(state.FSMState)
+
+	// Map callback data to FSM events
+	var event string
 	switch {
 	case data == "cancel":
-		c.sendMessage(chatID, "❌ 已取消商品上架流程")
-		return c.dao.DeleteUserSession(ctx, userID, "add_product")
-
+		event = EventCancel
 	case data == "confirm":
-		if err := c.productDAO.SaveProduct(ctx, &state); err != nil {
-			return c.sendMessage(chatID, "❌ 儲存失敗："+err.Error())
-		} else {
-			c.sendMessage(chatID, "🎉 商品已成功上架！")
-		}
-		return c.dao.DeleteUserSession(ctx, userID, "add_product")
-
+		event = EventConfirm
 	case data == "pause":
-		c.sendMessage(chatID, "💾 流程已暫存，您可以稍後使用 /add_product 繼續")
-		return nil // Keep session, don't delete
-
+		event = EventPause
 	case len(data) > 5 && data[:5] == "skip_":
-		step := data[5:] // Remove "skip_" prefix
-		return c.handleSkipStep(ctx, &state, step, userID, chatID)
-
+		event = EventSkip
 	case len(data) > 5 && data[:5] == "done_":
-		step := data[5:] // Remove "done_" prefix
-		return c.handleDoneStep(ctx, &state, step, userID, chatID)
+		event = EventDone
+	default:
+		return c.sendMessage(chatID, "❌ 未知的操作")
 	}
 
-	return nil
-}
-
-// handleSkipStep handles skipping specific steps
-func (c *AddProductCommand) handleSkipStep(ctx context.Context, state *UserState, step string, userID int64, chatID int64) error {
-	switch step {
-	case "description":
-		state.Product.Description = "" // Skip with empty value
-		state.Step = "specs"
-		c.sendMessage(chatID, "⏭️ 已跳過描述")
-		return c.sendMessageWithButtons(chatID, "請輸入商品規格（每行一項）：", "specs")
-	case "specs":
-		state.Specs = []string{} // Skip with empty specs
-		state.Step = "images"
-		c.sendMessage(chatID, "⏭️ 已跳過規格")
-		return c.sendMessageWithButtons(chatID, "請上傳商品圖片（最多 5 張）：", "images")
-	case "images":
-		state.ImageFileIDs = []string{} // Skip with no images
-		state.Step = "confirm"
-		c.sendMessage(chatID, "⏭️ 已跳過圖片")
-		return c.sendSummary(chatID, state)
+	// Trigger FSM event
+	if err := userFSM.Event(ctx, event); err != nil {
+		return fmt.Errorf("FSM callback event error: %w", err)
 	}
 
-	// Save updated state
-	return c.dao.UpdateUserSession(ctx, userID, "add_product", state)
-}
+	// Update FSM state
+	state.FSMState = userFSM.Current()
 
-// handleDoneStep handles completing specific steps via button press
-func (c *AddProductCommand) handleDoneStep(ctx context.Context, state *UserState, step string, userID int64, chatID int64) error {
-	switch step {
-	case "specs":
-		state.Step = "images"
-		c.sendMessage(chatID, "✅ 規格輸入完成")
-		if err := c.dao.UpdateUserSession(ctx, userID, "add_product", state); err != nil {
-			return err
+	// Save updated state (only if not completed or cancelled)
+	if state.FSMState != StateCompleted && state.FSMState != StateCancelled {
+		if err := c.dao.UpdateUserSession(ctx, userID, "add_product", &state); err != nil {
+			return fmt.Errorf("failed to save user state: %w", err)
 		}
-		return c.sendMessageWithButtons(chatID, "請上傳商品圖片（最多 5 張）：", "images")
-
-	case "images":
-		if len(state.ImageFileIDs) == 0 {
-			return c.sendMessage(chatID, "⚠️ 請至少上傳一張商品圖片，或點擊「跳過」")
-		}
-		state.Step = "confirm"
-		c.sendMessage(chatID, "✅ 圖片上傳完成")
-		if err := c.dao.UpdateUserSession(ctx, userID, "add_product", state); err != nil {
-			return err
-		}
-		return c.sendSummary(chatID, state)
 	}
 
 	return nil
