@@ -9,6 +9,20 @@ import (
 	"go.uber.org/fx"
 )
 
+// Message constants for better maintainability
+const (
+	msgStartFlow        = "🆕 開始新的商品上架流程"
+	msgNoActiveSession  = "❌ 未找到活動會話"
+	msgUnknownOperation = "❌ 未知的操作"
+	msgUseAddProduct    = "請使用 /add_product 開始上架商品。"
+	msgResumeFlow       = "📋 發現未完成的商品上架流程\n當前步驟: %s\n\n您可以:\n• 繼續輸入以完成當前步驟\n• 輸入 /cancel 取消流程\n• 輸入 /restart 重新開始"
+)
+
+// Error message constants
+const (
+	errMaxImages = "❌ 最多只能上傳 5 張圖片，目前已上傳 %d 張"
+)
+
 type AddProductCommand struct {
 	dao        *CommandDAO
 	productDAO *ProductDAO
@@ -49,61 +63,63 @@ func NewAddProductCommand(p AddProductCommandParams) *AddProductCommand {
 	}
 }
 
-// Handle processes incoming messages using FSM
+// Handle processes incoming messages using FSM - simplified for readability
 func (c *AddProductCommand) Handle(msg *tgbotapi.Message) error {
 	ctx := context.Background()
 	userID := msg.From.ID
 	chatID := msg.Chat.ID
 	text := msg.Text
 
-	// Get or create user state
 	state, err := c.getOrCreateUserState(ctx, userID, chatID, text)
 	if err != nil {
 		return fmt.Errorf("failed to get user state: %w", err)
 	}
 
 	if state == nil {
-		return c.sendMessage(chatID, "請使用 /add_product 開始上架商品。")
+		return c.sendMessage(chatID, msgUseAddProduct)
 	}
 
-	// Create FSM instance
-	userFSM := c.createFSM(userID, chatID, state, msg)
+	return c.processUserInput(ctx, userID, chatID, state, msg)
+}
 
-	// Set current FSM state
+// processUserInput handles FSM logic - extracted for better readability
+func (c *AddProductCommand) processUserInput(ctx context.Context, userID, chatID int64, state *UserState, msg *tgbotapi.Message) error {
+	userFSM := NewAddProductFSM(c, userID, chatID, state, msg)
 	userFSM.SetState(state.FSMState)
 
-	// Determine event based on input and current state
-	event := c.determineEvent(text, userFSM.Current(), msg)
+	event := c.determineEvent(msg.Text, userFSM.Current(), msg)
+	state.CurrentInput = msg.Text
 
-	// Store input for validation
-	state.CurrentInput = text
-
-	// Trigger FSM event
 	if err := userFSM.Event(ctx, event); err != nil {
-		// Handle FSM errors (invalid transitions, validation errors, etc.)
-		if err.Error() == "event "+event+" inappropriate in current state "+userFSM.Current() {
-			return c.handleInvalidInput(chatID, userFSM.Current(), text)
-		}
-		// Handle validation errors
-		if err.Error() == "invalid price format" || err.Error() == "invalid stock format" {
-			return c.handleInvalidInput(chatID, userFSM.Current(), text)
-		}
-		if err.Error() == "maximum images reached" {
-			return c.sendMessage(chatID, fmt.Sprintf("❌ 最多只能上傳 5 張圖片，目前已上傳 %d 張", len(state.ImageFileIDs)))
+		return c.handleFSMError(err, chatID, userFSM.Current(), msg.Text, state, event)
+	}
+
+	state.FSMState = userFSM.Current()
+	return c.saveStateIfNeeded(ctx, userID, state)
+}
+
+// handleFSMError provides centralized error handling
+func (c *AddProductCommand) handleFSMError(err error, chatID int64, currentState, input string, state *UserState, event string) error {
+	switch err.Error() {
+	case "invalid price format", "invalid stock format":
+		return c.handleInvalidInput(chatID, currentState, input)
+	case "maximum images reached":
+		return c.sendMessage(chatID, fmt.Sprintf(errMaxImages, len(state.ImageFileIDs)))
+	default:
+		if err.Error() == "event "+event+" inappropriate in current state "+currentState {
+			return c.handleInvalidInput(chatID, currentState, input)
 		}
 		return fmt.Errorf("FSM event error: %w", err)
 	}
+}
 
-	// Update FSM state in user state
-	state.FSMState = userFSM.Current()
-
-	// Save updated state (only if not completed or cancelled)
+// saveStateIfNeeded handles state persistence logic
+func (c *AddProductCommand) saveStateIfNeeded(ctx context.Context, userID int64, state *UserState) error {
 	if state.FSMState != StateCompleted && state.FSMState != StateCancelled {
 		if err := c.dao.UpdateUserSession(ctx, userID, "add_product", state); err != nil {
 			return fmt.Errorf("failed to save user state: %w", err)
 		}
 	}
-
 	return nil
 }
 
@@ -122,7 +138,7 @@ func (c *AddProductCommand) getOrCreateUserState(ctx context.Context, userID int
 			if err := c.dao.CreateUserSession(ctx, chatID, userID, "add_product", state); err != nil {
 				return nil, fmt.Errorf("failed to create user session: %w", err)
 			}
-			c.sendMessage(chatID, "🆕 開始新的商品上架流程")
+			c.sendMessage(chatID, msgStartFlow)
 			return state, nil
 		}
 		return nil, nil
@@ -137,7 +153,7 @@ func (c *AddProductCommand) getOrCreateUserState(ctx context.Context, userID int
 	// Handle resume for existing session
 	if text == "/add_product" {
 		currentStepMsg := c.getStepDescription(state.FSMState)
-		resumeMsg := fmt.Sprintf("📋 發現未完成的商品上架流程\n當前步驟: %s\n\n您可以:\n• 繼續輸入以完成當前步驟\n• 輸入 /cancel 取消流程\n• 輸入 /restart 重新開始", currentStepMsg)
+		resumeMsg := fmt.Sprintf(msgResumeFlow, currentStepMsg)
 		c.sendMessage(chatID, resumeMsg)
 	}
 
@@ -264,7 +280,7 @@ func (c *AddProductCommand) HandleCallback(callback *tgbotapi.CallbackQuery) err
 	// Get current user state
 	session, err := c.dao.GetUserSession(ctx, userID, "add_product")
 	if err != nil || session == nil {
-		return c.sendMessage(chatID, "❌ 未找到活動會話")
+		return c.sendMessage(chatID, msgNoActiveSession)
 	}
 
 	var state UserState
@@ -273,7 +289,7 @@ func (c *AddProductCommand) HandleCallback(callback *tgbotapi.CallbackQuery) err
 	}
 
 	// Create FSM instance and set current state
-	userFSM := c.createFSM(userID, chatID, &state, nil)
+	userFSM := NewAddProductFSM(c, userID, chatID, &state, nil)
 	userFSM.SetState(state.FSMState)
 
 	// Map callback data to FSM events
@@ -290,7 +306,7 @@ func (c *AddProductCommand) HandleCallback(callback *tgbotapi.CallbackQuery) err
 	case len(data) > 5 && data[:5] == "done_":
 		event = EventDone
 	default:
-		return c.sendMessage(chatID, "❌ 未知的操作")
+		return c.sendMessage(chatID, msgUnknownOperation)
 	}
 
 	// Trigger FSM event

@@ -9,6 +9,29 @@ import (
 	"github.com/looplab/fsm"
 )
 
+// UI Message constants for FSM states
+const (
+	promptSKU         = "請輸入商品 SKU："
+	promptName        = "請輸入商品名稱："
+	promptCategory    = "請輸入商品類別："
+	promptPrice       = "請輸入商品價格："
+	promptStock       = "請輸入商品庫存數量："
+	promptDescription = "請輸入商品描述："
+	promptSpecs       = "請輸入商品規格（每行一項）："
+	promptImages      = "請上傳商品圖片（最多 5 張）："
+
+	msgSuccess           = "🎉 商品已成功上架！"
+	msgCancelled         = "❌ 已取消商品上架流程"
+	msgPaused            = "💾 流程已暫存，您可以稍後使用 /add_product 繼續"
+	msgSpecAdded         = "✅ 規格已新增，繼續輸入或點擊「完成」按鈕："
+	msgImageUploaded     = "✅ 圖片已上傳 (%d/%d)，還可上傳 %d 張或點擊「完成」按鈕"
+	msgImageLimitReached = "✅ 圖片已上傳 (%d/%d)，已達上限！點擊「完成」按鈕"
+
+	msgInvalidPrice = "❌ 價格格式錯誤，請輸入數字："
+	msgInvalidStock = "❌ 庫存格式錯誤，請輸入整數："
+	msgInvalidInput = "❌ 輸入格式錯誤，請重新輸入："
+)
+
 // FSM States
 const (
 	StateInit        = "init"
@@ -49,8 +72,8 @@ type FSMContext struct {
 	Command *AddProductCommand
 }
 
-// createFSM creates a new FSM instance with all events and callbacks
-func (c *AddProductCommand) createFSM(userID, chatID int64, state *UserState, msg *tgbotapi.Message) *fsm.FSM {
+// NewAddProductFSM creates a new FSM instance with all events and callbacks
+func NewAddProductFSM(c *AddProductCommand, userID, chatID int64, state *UserState, msg *tgbotapi.Message) *fsm.FSM {
 	fsmCtx := &FSMContext{
 		UserID:  userID,
 		ChatID:  chatID,
@@ -137,13 +160,11 @@ func (c *AddProductCommand) determineEvent(text, currentState string, msg *tgbot
 		}
 	}
 
-	// Handle confirmation
+	// Handle confirmation (button data handled in HandleCallback)
 	if currentState == StateConfirm {
-		if text == "確認" {
-			return EventConfirm
-		} else if text == "取消" {
-			return EventReject
-		}
+		// Only allow button interactions for confirmation
+		// Text input is ignored in confirmation state
+		return EventNext // Will be ignored by FSM since no valid transition exists
 	}
 
 	// Handle image uploads
@@ -158,35 +179,35 @@ func (c *AddProductCommand) determineEvent(text, currentState string, msg *tgbot
 // FSM State Entry Callbacks
 
 func (c *AddProductCommand) enterSKU(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessage(fsmCtx.ChatID, "請輸入商品 SKU：")
+	c.sendMessage(fsmCtx.ChatID, promptSKU)
 }
 
 func (c *AddProductCommand) enterName(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessage(fsmCtx.ChatID, "請輸入商品名稱：")
+	c.sendMessage(fsmCtx.ChatID, promptName)
 }
 
 func (c *AddProductCommand) enterCategory(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessage(fsmCtx.ChatID, "請輸入商品類別：")
+	c.sendMessage(fsmCtx.ChatID, promptCategory)
 }
 
 func (c *AddProductCommand) enterPrice(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessage(fsmCtx.ChatID, "請輸入商品價格：")
+	c.sendMessage(fsmCtx.ChatID, promptPrice)
 }
 
 func (c *AddProductCommand) enterStock(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessage(fsmCtx.ChatID, "請輸入商品庫存數量：")
+	c.sendMessage(fsmCtx.ChatID, promptStock)
 }
 
 func (c *AddProductCommand) enterDescription(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessageWithButtons(fsmCtx.ChatID, "請輸入商品描述：", "description")
+	c.sendMessageWithButtons(fsmCtx.ChatID, promptDescription, "description")
 }
 
 func (c *AddProductCommand) enterSpecs(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessageWithButtons(fsmCtx.ChatID, "請輸入商品規格（每行一項）：", "specs")
+	c.sendMessageWithButtons(fsmCtx.ChatID, promptSpecs, "specs")
 }
 
 func (c *AddProductCommand) enterImages(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessageWithButtons(fsmCtx.ChatID, "請上傳商品圖片（最多 5 張）：", "images")
+	c.sendMessageWithButtons(fsmCtx.ChatID, promptImages, "images")
 }
 
 func (c *AddProductCommand) enterConfirm(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
@@ -197,20 +218,20 @@ func (c *AddProductCommand) enterCompleted(ctx context.Context, e *fsm.Event, fs
 	if err := c.productDAO.SaveProduct(ctx, fsmCtx.State); err != nil {
 		c.sendMessage(fsmCtx.ChatID, "❌ 儲存失敗："+err.Error())
 	} else {
-		c.sendMessage(fsmCtx.ChatID, "🎉 商品已成功上架！")
+		c.sendMessage(fsmCtx.ChatID, msgSuccess)
 	}
 	// Clean up session
 	c.dao.DeleteUserSession(ctx, fsmCtx.UserID, "add_product")
 }
 
 func (c *AddProductCommand) enterCancelled(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessage(fsmCtx.ChatID, "❌ 已取消商品上架流程")
+	c.sendMessage(fsmCtx.ChatID, msgCancelled)
 	// Clean up session
 	c.dao.DeleteUserSession(ctx, fsmCtx.UserID, "add_product")
 }
 
 func (c *AddProductCommand) enterPaused(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	c.sendMessage(fsmCtx.ChatID, "💾 流程已暫存，您可以稍後使用 /add_product 繼續")
+	c.sendMessage(fsmCtx.ChatID, msgPaused)
 }
 
 // FSM Event Callbacks
@@ -219,22 +240,36 @@ func (c *AddProductCommand) enterPaused(ctx context.Context, e *fsm.Event, fsmCt
 func (c *AddProductCommand) validateInput(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
 	switch e.Src {
 	case StatePrice:
-		if _, err := strconv.ParseFloat(fsmCtx.State.CurrentInput, 64); err != nil {
-			// Return error to prevent state transition
+		if !c.isValidPrice(fsmCtx.State.CurrentInput) {
 			e.Cancel(fmt.Errorf("invalid price format"))
 			return
 		}
 	case StateStock:
-		if _, err := strconv.Atoi(fsmCtx.State.CurrentInput); err != nil {
+		if !c.isValidStock(fsmCtx.State.CurrentInput) {
 			e.Cancel(fmt.Errorf("invalid stock format"))
 			return
 		}
 	case StateImages:
-		if fsmCtx.Message != nil && fsmCtx.Message.Photo != nil && len(fsmCtx.State.ImageFileIDs) >= 5 {
+		if !c.isValidImageUpload(fsmCtx) {
 			e.Cancel(fmt.Errorf("maximum images reached"))
 			return
 		}
 	}
+}
+
+// Validation helper methods
+func (c *AddProductCommand) isValidPrice(input string) bool {
+	_, err := strconv.ParseFloat(input, 64)
+	return err == nil
+}
+
+func (c *AddProductCommand) isValidStock(input string) bool {
+	_, err := strconv.Atoi(input)
+	return err == nil
+}
+
+func (c *AddProductCommand) isValidImageUpload(fsmCtx *FSMContext) bool {
+	return !(fsmCtx.Message != nil && fsmCtx.Message.Photo != nil && len(fsmCtx.State.ImageFileIDs) >= 5)
 }
 
 func (c *AddProductCommand) storeInput(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
@@ -257,7 +292,7 @@ func (c *AddProductCommand) storeInput(ctx context.Context, e *fsm.Event, fsmCtx
 		if fsmCtx.State.CurrentInput != "/done" {
 			fsmCtx.State.Specs = append(fsmCtx.State.Specs, fsmCtx.State.CurrentInput)
 			// Send feedback for specs
-			c.sendMessage(fsmCtx.ChatID, "✅ 規格已新增，繼續輸入或點擊「完成」按鈕：")
+			c.sendMessage(fsmCtx.ChatID, msgSpecAdded)
 		}
 	case StateImages:
 		if fsmCtx.Message != nil && fsmCtx.Message.Photo != nil {
@@ -268,9 +303,9 @@ func (c *AddProductCommand) storeInput(ctx context.Context, e *fsm.Event, fsmCtx
 			const maxImages = 5
 			remaining := maxImages - len(fsmCtx.State.ImageFileIDs)
 			if remaining > 0 {
-				c.sendMessage(fsmCtx.ChatID, fmt.Sprintf("✅ 圖片已上傳 (%d/%d)，還可上傳 %d 張或點擊「完成」按鈕", len(fsmCtx.State.ImageFileIDs), maxImages, remaining))
+				c.sendMessage(fsmCtx.ChatID, fmt.Sprintf(msgImageUploaded, len(fsmCtx.State.ImageFileIDs), maxImages, remaining))
 			} else {
-				c.sendMessage(fsmCtx.ChatID, fmt.Sprintf("✅ 圖片已上傳 (%d/%d)，已達上限！點擊「完成」按鈕", len(fsmCtx.State.ImageFileIDs), maxImages))
+				c.sendMessage(fsmCtx.ChatID, fmt.Sprintf(msgImageLimitReached, len(fsmCtx.State.ImageFileIDs), maxImages))
 			}
 		}
 	}
@@ -280,12 +315,12 @@ func (c *AddProductCommand) storeInput(ctx context.Context, e *fsm.Event, fsmCtx
 func (c *AddProductCommand) handleInvalidInput(chatID int64, currentState, input string) error {
 	switch currentState {
 	case StatePrice:
-		return c.sendMessage(chatID, "❌ 價格格式錯誤，請輸入數字：")
+		return c.sendMessage(chatID, msgInvalidPrice)
 	case StateStock:
-		return c.sendMessage(chatID, "❌ 庫存格式錯誤，請輸入整數：")
+		return c.sendMessage(chatID, msgInvalidStock)
 	case StateImages:
 		return c.sendMessage(chatID, fmt.Sprintf("❌ 最多只能上傳 5 張圖片，目前已上傳 %d 張", 5))
 	default:
-		return c.sendMessage(chatID, "❌ 輸入格式錯誤，請重新輸入：")
+		return c.sendMessage(chatID, msgInvalidInput)
 	}
 }
