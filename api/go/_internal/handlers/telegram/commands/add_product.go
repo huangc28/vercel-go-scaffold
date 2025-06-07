@@ -26,22 +26,6 @@ const (
 	errMaxImages = "❌ 最多只能上傳 5 張圖片，目前已上傳 %d 張"
 )
 
-type AddProductCommand struct {
-	dao        *CommandDAO
-	productDAO *ProductDAO
-	botAPI     *tgbotapi.BotAPI
-	logger     *zap.SugaredLogger
-}
-
-type AddProductCommandParams struct {
-	fx.In
-
-	DAO        *CommandDAO
-	ProductDAO *ProductDAO
-	BotAPI     *tgbotapi.BotAPI
-	Logger     *zap.SugaredLogger
-}
-
 // UserState represents the product data and current input
 type UserState struct {
 	Product      ProductData `json:"product"`
@@ -60,12 +44,31 @@ type ProductData struct {
 	Description string  `json:"description"`
 }
 
+type AddProductCommand struct {
+	dao              *CommandDAO
+	productDAO       *ProductDAO
+	botAPI           *tgbotapi.BotAPI
+	logger           *zap.SugaredLogger
+	addProductStates map[string]AddProductState
+}
+
+type AddProductCommandParams struct {
+	fx.In
+
+	DAO              *CommandDAO
+	ProductDAO       *ProductDAO
+	BotAPI           *tgbotapi.BotAPI
+	Logger           *zap.SugaredLogger
+	AddProductStates map[string]AddProductState
+}
+
 func NewAddProductCommand(p AddProductCommandParams) *AddProductCommand {
 	return &AddProductCommand{
-		dao:        p.DAO,
-		productDAO: p.ProductDAO,
-		botAPI:     p.BotAPI,
-		logger:     p.Logger,
+		dao:              p.DAO,
+		productDAO:       p.ProductDAO,
+		botAPI:           p.BotAPI,
+		logger:           p.Logger,
+		addProductStates: p.AddProductStates,
 	}
 }
 
@@ -86,7 +89,7 @@ func (c *AddProductCommand) Handle(msg *tgbotapi.Message) error {
 
 // processUserInput handles FSM logic - extracted for better readability
 func (c *AddProductCommand) processUserInput(ctx context.Context, userID, chatID int64, state *UserState, msg *tgbotapi.Message) error {
-	userFSM := NewAddProductFSM(c, userID, chatID, state, msg)
+	userFSM := NewAddProductFSM(c, userID, chatID, state, msg, c.addProductStates)
 	availEvents := userFSM.AvailableTransitions()
 
 	if len(availEvents) == 0 {
@@ -159,10 +162,6 @@ func (c *AddProductCommand) getOrCreateUserState(ctx context.Context, userID int
 		return nil, fmt.Errorf("failed to unmarshal session state: %w", err)
 	}
 
-	// currentStepMsg := c.getStepDescription(state.FSMState)
-	// resumeMsg := fmt.Sprintf(msgResumeFlow, currentStepMsg)
-	// c.sendMessage(chatID, resumeMsg)
-
 	return state, nil
 }
 
@@ -171,73 +170,6 @@ func (c *AddProductCommand) sendMessage(chatID int64, text string) error {
 	msg := tgbotapi.NewMessage(chatID, text)
 	_, err := c.botAPI.Send(msg)
 	return err
-}
-
-func (c *AddProductCommand) sendMessageWithButtons(chatID int64, text, step string) error {
-	msg := tgbotapi.NewMessage(chatID, text)
-
-	// Create keyboard based on step type
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("✅ 完成", fmt.Sprintf("done_%s", step)),
-			tgbotapi.NewInlineKeyboardButtonData("⏭️ 跳過", fmt.Sprintf("skip_%s", step)),
-		),
-
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("❌ 取消", "cancel"),
-			tgbotapi.NewInlineKeyboardButtonData("💾 暫存", "pause"),
-		),
-	)
-
-	msg.ReplyMarkup = keyboard
-
-	// if c.canSkipStep(step) {
-	// 	if c.needsDoneButton(step) {
-	// 		// For steps that need a "Done" button (specs, images)
-	// 		keyboard = tgbotapi.NewInlineKeyboardMarkup(
-	// 			tgbotapi.NewInlineKeyboardRow(
-	// 				tgbotapi.NewInlineKeyboardButtonData("✅ 完成", fmt.Sprintf("done_%s", step)),
-	// 				tgbotapi.NewInlineKeyboardButtonData("⏭️ 跳過", fmt.Sprintf("skip_%s", step)),
-	// 			),
-	// 			tgbotapi.NewInlineKeyboardRow(
-	// 				tgbotapi.NewInlineKeyboardButtonData("❌ 取消", "cancel"),
-	// 				tgbotapi.NewInlineKeyboardButtonData("💾 暫存", "pause"),
-	// 			),
-	// 		)
-	// 	} else {
-	// 		// For other skippable steps (description)
-	// 		keyboard = tgbotapi.NewInlineKeyboardMarkup(
-	// 			tgbotapi.NewInlineKeyboardRow(
-	// 				tgbotapi.NewInlineKeyboardButtonData("❌ 取消", "cancel"),
-	// 				tgbotapi.NewInlineKeyboardButtonData("⏭️ 跳過", fmt.Sprintf("skip_%s", step)),
-	// 				tgbotapi.NewInlineKeyboardButtonData("💾 暫存", "pause"),
-	// 			),
-	// 		)
-	// 	}
-	// 	msg.ReplyMarkup = keyboard
-	// }
-
-	_, err := c.botAPI.Send(msg)
-	return err
-}
-
-// canSkipStep determines if a step can be skipped
-func (c *AddProductCommand) canSkipStep(step string) bool {
-	skippableSteps := map[string]bool{
-		"description": true,
-		"specs":       true,
-		"images":      true,
-	}
-	return skippableSteps[step]
-}
-
-// needsDoneButton determines if a step needs a "Done" button
-func (c *AddProductCommand) needsDoneButton(step string) bool {
-	stepsWithDone := map[string]bool{
-		"specs":  true,
-		"images": true,
-	}
-	return stepsWithDone[step]
 }
 
 // sendSummary sends a product summary for confirmation

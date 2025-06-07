@@ -26,6 +26,28 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 			telegram.NewBotAPI,
 		),
 
+		// AddProductStates, should extract to a fx file
+		fx.Provide(
+			commands.AsAddProductState(commands.NewAddProductStateInit),
+			commands.AsAddProductState(commands.NewAddProductStateSKU),
+			commands.AsAddProductState(commands.NewAddProductStateName),
+			commands.AsAddProductState(commands.NewAddProductStateCategory),
+			commands.AsAddProductState(commands.NewAddProductStatePrice),
+			commands.AsAddProductState(commands.NewAddProductStateStock),
+			commands.AsAddProductState(commands.NewAddProductStateDescription),
+			commands.AsAddProductState(commands.NewAddProductStateSpecs),
+			commands.AsAddProductState(commands.NewAddProductStateImages),
+			commands.AsAddProductState(commands.NewAddProductStateConfirm),
+			commands.AsAddProductState(commands.NewAddProductStateCompleted),
+			commands.AsAddProductState(commands.NewAddProductStateCancelled),
+			commands.AsAddProductState(commands.NewAddProductStatePaused),
+
+			fx.Annotate(
+				commands.NewAddProductStateMap,
+				fx.ParamTags(`group:"add_product_states"`),
+			),
+		),
+
 		fx.Provide(
 			commands.AsCommandHandler(commands.NewAddProductCommand),
 
