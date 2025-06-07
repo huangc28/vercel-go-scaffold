@@ -171,18 +171,18 @@ func (c *AddProductCommand) handleStateStep(ctx context.Context, state *UserStat
 	case "description":
 		state.Product.Description = text
 		state.Step = "specs"
-		return c.sendMessageWithButtons(chatID, "請輸入商品規格（每行一項，輸入 /done 完成）：", "specs")
+		return c.sendMessageWithButtons(chatID, "請輸入商品規格（每行一項）：", "specs")
 	case "specs":
 		if text == "/done" {
 			state.Step = "images"
-			return c.sendMessageWithButtons(chatID, "請上傳商品圖片（最多 5 張，輸入 /done 完成）：", "images")
+			return c.sendMessageWithButtons(chatID, "請上傳商品圖片（最多 5 張）：", "images")
 		}
 		state.Specs = append(state.Specs, text)
-		return c.sendMessage(chatID, "✅ 規格已新增，繼續輸入或輸入 /done 完成：")
+		return c.sendMessage(chatID, "✅ 規格已新增，繼續輸入或點擊「完成」按鈕：")
 	case "images":
 		if text == "/done" {
 			if len(state.ImageFileIDs) == 0 {
-				return c.sendMessage(chatID, "⚠️ 請至少上傳一張商品圖片，或輸入 /done 跳過此步驟")
+				return c.sendMessage(chatID, "⚠️ 請至少上傳一張商品圖片，或點擊「跳過」按鈕")
 			}
 			state.Step = "confirm"
 			return c.sendSummary(chatID, state)
@@ -198,12 +198,12 @@ func (c *AddProductCommand) handleStateStep(ctx context.Context, state *UserStat
 
 			remaining := maxImages - len(state.ImageFileIDs)
 			if remaining > 0 {
-				return c.sendMessage(chatID, fmt.Sprintf("✅ 圖片已上傳 (%d/%d)，還可上傳 %d 張或輸入 /done 完成", len(state.ImageFileIDs), maxImages, remaining))
+				return c.sendMessage(chatID, fmt.Sprintf("✅ 圖片已上傳 (%d/%d)，還可上傳 %d 張或點擊「完成」按鈕", len(state.ImageFileIDs), maxImages, remaining))
 			} else {
-				return c.sendMessage(chatID, fmt.Sprintf("✅ 圖片已上傳 (%d/%d)，已達上限！輸入 /done 完成", len(state.ImageFileIDs), maxImages))
+				return c.sendMessage(chatID, fmt.Sprintf("✅ 圖片已上傳 (%d/%d)，已達上限！點擊「完成」按鈕", len(state.ImageFileIDs), maxImages))
 			}
 		}
-		return c.sendMessage(chatID, fmt.Sprintf("請上傳商品圖片（最多 %d 張，目前 %d 張），輸入 /done 完成：", 5, len(state.ImageFileIDs)))
+		return c.sendMessage(chatID, fmt.Sprintf("請上傳商品圖片（最多 %d 張，目前 %d 張），點擊「完成」按鈕：", 5, len(state.ImageFileIDs)))
 	case "confirm":
 		if text == "確認" {
 			if err := c.productDAO.SaveProduct(ctx, state); err != nil {
@@ -235,15 +235,32 @@ func (c *AddProductCommand) sendMessage(chatID int64, text string) error {
 func (c *AddProductCommand) sendMessageWithButtons(chatID int64, text string, step string) error {
 	msg := tgbotapi.NewMessage(chatID, text)
 
-	// Only add buttons for steps that can be skipped
+	// Create keyboard based on step type
+	var keyboard tgbotapi.InlineKeyboardMarkup
+
 	if c.canSkipStep(step) {
-		keyboard := tgbotapi.NewInlineKeyboardMarkup(
-			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("❌ 取消", "cancel"),
-				tgbotapi.NewInlineKeyboardButtonData("⏭️ 跳過", fmt.Sprintf("skip_%s", step)),
-				tgbotapi.NewInlineKeyboardButtonData("💾 暫存", "pause"),
-			),
-		)
+		if c.needsDoneButton(step) {
+			// For steps that need a "Done" button (specs, images)
+			keyboard = tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("✅ 完成", fmt.Sprintf("done_%s", step)),
+					tgbotapi.NewInlineKeyboardButtonData("⏭️ 跳過", fmt.Sprintf("skip_%s", step)),
+				),
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("❌ 取消", "cancel"),
+					tgbotapi.NewInlineKeyboardButtonData("💾 暫存", "pause"),
+				),
+			)
+		} else {
+			// For other skippable steps (description)
+			keyboard = tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("❌ 取消", "cancel"),
+					tgbotapi.NewInlineKeyboardButtonData("⏭️ 跳過", fmt.Sprintf("skip_%s", step)),
+					tgbotapi.NewInlineKeyboardButtonData("💾 暫存", "pause"),
+				),
+			)
+		}
 		msg.ReplyMarkup = keyboard
 	}
 
@@ -259,6 +276,15 @@ func (c *AddProductCommand) canSkipStep(step string) bool {
 		"images":      true,
 	}
 	return skippableSteps[step]
+}
+
+// needsDoneButton determines if a step needs a "Done" button
+func (c *AddProductCommand) needsDoneButton(step string) bool {
+	stepsWithDone := map[string]bool{
+		"specs":  true,
+		"images": true,
+	}
+	return stepsWithDone[step]
 }
 
 // sendSummary sends a product summary for confirmation
@@ -317,8 +343,8 @@ func (c *AddProductCommand) getStepPrompt(step string) string {
 		"price":       "請輸入商品價格：",
 		"stock":       "請輸入商品庫存數量：",
 		"description": "請輸入商品描述：",
-		"specs":       "請輸入商品規格（每行一項，輸入 /done 完成）：",
-		"images":      "請上傳商品圖片（最多 5 張，輸入 /done 完成）：",
+		"specs":       "請輸入商品規格（每行一項）：",
+		"images":      "請上傳商品圖片（最多 5 張）：",
 		"confirm":     "請檢查商品資訊，輸入「確認」儲存或「取消」放棄：",
 	}
 
@@ -366,6 +392,10 @@ func (c *AddProductCommand) HandleCallback(callback *tgbotapi.CallbackQuery) err
 	case len(data) > 5 && data[:5] == "skip_":
 		step := data[5:] // Remove "skip_" prefix
 		return c.handleSkipStep(ctx, &state, step, userID, chatID)
+
+	case len(data) > 5 && data[:5] == "done_":
+		step := data[5:] // Remove "done_" prefix
+		return c.handleDoneStep(ctx, &state, step, userID, chatID)
 	}
 
 	return nil
@@ -378,12 +408,12 @@ func (c *AddProductCommand) handleSkipStep(ctx context.Context, state *UserState
 		state.Product.Description = "" // Skip with empty value
 		state.Step = "specs"
 		c.sendMessage(chatID, "⏭️ 已跳過描述")
-		return c.sendMessageWithButtons(chatID, "請輸入商品規格（每行一項，輸入 /done 完成）：", "specs")
+		return c.sendMessageWithButtons(chatID, "請輸入商品規格（每行一項）：", "specs")
 	case "specs":
 		state.Specs = []string{} // Skip with empty specs
 		state.Step = "images"
 		c.sendMessage(chatID, "⏭️ 已跳過規格")
-		return c.sendMessageWithButtons(chatID, "請上傳商品圖片（最多 5 張，輸入 /done 完成）：", "images")
+		return c.sendMessageWithButtons(chatID, "請上傳商品圖片（最多 5 張）：", "images")
 	case "images":
 		state.ImageFileIDs = []string{} // Skip with no images
 		state.Step = "confirm"
@@ -393,6 +423,32 @@ func (c *AddProductCommand) handleSkipStep(ctx context.Context, state *UserState
 
 	// Save updated state
 	return c.dao.UpdateUserSession(ctx, userID, "add_product", state)
+}
+
+// handleDoneStep handles completing specific steps via button press
+func (c *AddProductCommand) handleDoneStep(ctx context.Context, state *UserState, step string, userID int64, chatID int64) error {
+	switch step {
+	case "specs":
+		state.Step = "images"
+		c.sendMessage(chatID, "✅ 規格輸入完成")
+		if err := c.dao.UpdateUserSession(ctx, userID, "add_product", state); err != nil {
+			return err
+		}
+		return c.sendMessageWithButtons(chatID, "請上傳商品圖片（最多 5 張）：", "images")
+
+	case "images":
+		if len(state.ImageFileIDs) == 0 {
+			return c.sendMessage(chatID, "⚠️ 請至少上傳一張商品圖片，或點擊「跳過」")
+		}
+		state.Step = "confirm"
+		c.sendMessage(chatID, "✅ 圖片上傳完成")
+		if err := c.dao.UpdateUserSession(ctx, userID, "add_product", state); err != nil {
+			return err
+		}
+		return c.sendSummary(chatID, state)
+	}
+
+	return nil
 }
 
 func (c *AddProductCommand) Command() BotCommand {
