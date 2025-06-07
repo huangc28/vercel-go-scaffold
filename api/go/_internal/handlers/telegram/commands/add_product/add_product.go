@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github/huangc28/kikichoice-be/api/go/_internal/db"
 	"github/huangc28/kikichoice-be/api/go/_internal/handlers/telegram/commands"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -48,7 +49,7 @@ type ProductData struct {
 
 type AddProductCommand struct {
 	dao              *commands.CommandDAO
-	productDAO       *commands.ProductDAO
+	productDAO       *ProductDAO
 	botAPI           *tgbotapi.BotAPI
 	logger           *zap.SugaredLogger
 	addProductStates map[string]AddProductState
@@ -58,7 +59,7 @@ type AddProductCommandParams struct {
 	fx.In
 
 	DAO              *commands.CommandDAO
-	ProductDAO       *commands.ProductDAO
+	ProductDAO       *ProductDAO
 	BotAPI           *tgbotapi.BotAPI
 	Logger           *zap.SugaredLogger
 	AddProductStates map[string]AddProductState
@@ -144,7 +145,7 @@ func (c *AddProductCommand) getOrCreateUserState(ctx context.Context, userID int
 			return nil, fmt.Errorf("failed to marshal state: %w", err)
 		}
 
-		session = &UserSession{
+		session = &db.UserSession{
 			ChatID:      chatID,
 			UserID:      userID,
 			SessionType: "add_product",
@@ -240,7 +241,7 @@ func (c *AddProductCommand) HandleCallback(callback *tgbotapi.CallbackQuery) err
 	}
 
 	// Create FSM instance and set current state
-	userFSM := NewAddProductFSM(c, userID, chatID, &state, nil)
+	userFSM := NewAddProductFSM(c, userID, chatID, &state, nil, c.addProductStates)
 	userFSM.SetState(state.FSMState)
 
 	// Map callback data to FSM events
@@ -278,8 +279,8 @@ func (c *AddProductCommand) HandleCallback(callback *tgbotapi.CallbackQuery) err
 	return nil
 }
 
-func (c *AddProductCommand) Command() BotCommand {
-	return AddProduct
+func (c *AddProductCommand) Command() commands.BotCommand {
+	return commands.AddProduct
 }
 
-var _ CommandHandler = (*AddProductCommand)(nil)
+var _ commands.CommandHandler = (*AddProductCommand)(nil)

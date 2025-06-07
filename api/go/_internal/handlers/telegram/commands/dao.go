@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github/huangc28/kikichoice-be/api/go/_internal/db"
@@ -38,7 +37,7 @@ func NewCommandDAO(p CommandDAOParams) *CommandDAO {
 }
 
 // GetUserSession retrieves a user session by user_id and session_type
-func (cmd *CommandDAO) GetUserSession(ctx context.Context, userID int64, sessionType string) (*UserSession, error) {
+func (cmd *CommandDAO) GetUserSession(ctx context.Context, userID int64, sessionType string) (*db.UserSession, error) {
 	query := `
 		SELECT id, chat_id, user_id, session_type, state, created_at, updated_at, expires_at
 		FROM user_sessions
@@ -46,7 +45,7 @@ func (cmd *CommandDAO) GetUserSession(ctx context.Context, userID int64, session
 		LIMIT 1
 	`
 
-	var session UserSession
+	var session db.UserSession
 	err := cmd.db.QueryRowx(query, userID, sessionType).StructScan(&session)
 
 	if err != nil {
@@ -107,83 +106,4 @@ func (cmd *CommandDAO) DeleteUserSession(ctx context.Context, userID int64, sess
 // UpdateSession updates session state (keeping the original method signature)
 func (cmd *CommandDAO) UpdateSession(ctx context.Context, userID int64, sessType string, state interface{}) error {
 	return cmd.UpdateUserSession(ctx, userID, sessType, state)
-}
-
-// ProductDAO handles product-related database operations
-type ProductDAO struct {
-	db db.Conn
-}
-
-type ProductDAOParams struct {
-	fx.In
-
-	DB db.Conn
-}
-
-func NewProductDAO(p ProductDAOParams) *ProductDAO {
-	return &ProductDAO{db: p.DB}
-}
-
-// SaveProduct saves the product to the database using raw SQL
-func (p *ProductDAO) SaveProduct(ctx context.Context, state *UserState) error {
-	// Create product using raw SQL
-	query := `
-		INSERT INTO products (sku, name, price, category, stock_count, description)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id
-	`
-
-	var productID int64
-	err := p.db.QueryRow(query,
-		state.Product.SKU,
-		state.Product.Name,
-		state.Product.Price,
-		state.Product.Category,
-		state.Product.Stock,
-		state.Product.Description,
-	).Scan(&productID)
-
-	if err != nil {
-		return fmt.Errorf("failed to create product: %w", err)
-	}
-
-	// Create product specs
-	for i, spec := range state.Specs {
-		// Assume spec format is "name:value"
-		specQuery := `
-			INSERT INTO product_specs (product_id, spec_name, spec_value, sort_order)
-			VALUES ($1, $2, $3, $4)
-		`
-		// Simple parsing - you might want to improve this
-		specName := spec
-		specValue := ""
-		if len(spec) > 0 {
-			specName = spec
-			specValue = spec // For now, store the whole string as both name and value
-		}
-
-		_, err := p.db.Exec(specQuery, productID, specName, specValue, i)
-		if err != nil {
-			return fmt.Errorf("failed to create product spec: %w", err)
-		}
-	}
-
-	// Create product images
-	for i, fileID := range state.ImageFileIDs {
-		imageQuery := `
-			INSERT INTO product_images (product_id, url, alt_text, is_primary, sort_order)
-			VALUES ($1, $2, $3, $4, $5)
-		`
-
-		isPrimary := i == 0 // First image is primary
-		altText := fmt.Sprintf("%s image %d", state.Product.Name, i+1)
-		url := fmt.Sprintf("telegram_file://%s", fileID)
-
-		_, err := p.db.Exec(imageQuery, productID, url, altText, isPrimary, i)
-		if err != nil {
-			return fmt.Errorf("failed to create product image: %w", err)
-		}
-	}
-
-	return nil
 }
