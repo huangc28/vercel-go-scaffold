@@ -1,4 +1,4 @@
-package commands
+package add_product
 
 import (
 	"context"
@@ -52,7 +52,7 @@ type AddProductState interface {
 	Name() string
 	Buttons() []tgbotapi.InlineKeyboardButton
 	Prompt() string
-	Send(chatID int64)
+	Send(msg *tgbotapi.Message)
 	Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext)
 }
 
@@ -87,14 +87,18 @@ func (s *AddProductStateInit) Prompt() string {
 	return promptSKU
 }
 
-func (s *AddProductStateInit) Send(chatID int64) {
-	msg := tgbotapi.NewMessage(chatID, s.Prompt())
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(s.Buttons())
+func (s *AddProductStateInit) Send(msg *tgbotapi.Message) {
+	msg := tgbotapi.NewMessage(msg.Chat.ID, s.Prompt())
+	msg.ReplyToMessageID = msg.MessageID
+	msg.ReplyMarkup = tgbotapi.ForceReply{
+		ForceReply: true,
+		Selective:  true,
+	}
 	s.botAPI.Send(msg)
 }
 
 func (s *AddProductStateInit) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	s.Send(fsmCtx.ChatID)
+	s.Send(fsmCtx.Message)
 }
 
 // StateSKU - Required field, only cancel/pause options
@@ -123,8 +127,7 @@ func (s *AddProductStateSKU) Prompt() string {
 	return promptSKU
 }
 
-func (s *AddProductStateSKU) Send(chatID int64) {
-	msg := tgbotapi.NewMessage(chatID, s.Prompt())
+func (s *AddProductStateSKU) Send(msg *tgbotapi.Message) {
 	buttons := s.Buttons()
 	if len(buttons) > 0 {
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
@@ -136,7 +139,7 @@ func (s *AddProductStateSKU) Send(chatID int64) {
 }
 
 func (s *AddProductStateSKU) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	s.Send(fsmCtx.ChatID)
+	s.Send(fsmCtx.Message)
 }
 
 // StateName - Required field, only cancel/pause options

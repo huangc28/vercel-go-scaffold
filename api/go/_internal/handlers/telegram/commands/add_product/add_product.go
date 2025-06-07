@@ -1,4 +1,4 @@
-package commands
+package add_product
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github/huangc28/kikichoice-be/api/go/_internal/handlers/telegram/commands"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/fx"
@@ -45,8 +47,8 @@ type ProductData struct {
 }
 
 type AddProductCommand struct {
-	dao              *CommandDAO
-	productDAO       *ProductDAO
+	dao              *commands.CommandDAO
+	productDAO       *commands.ProductDAO
 	botAPI           *tgbotapi.BotAPI
 	logger           *zap.SugaredLogger
 	addProductStates map[string]AddProductState
@@ -55,8 +57,8 @@ type AddProductCommand struct {
 type AddProductCommandParams struct {
 	fx.In
 
-	DAO              *CommandDAO
-	ProductDAO       *ProductDAO
+	DAO              *commands.CommandDAO
+	ProductDAO       *commands.ProductDAO
 	BotAPI           *tgbotapi.BotAPI
 	Logger           *zap.SugaredLogger
 	AddProductStates map[string]AddProductState

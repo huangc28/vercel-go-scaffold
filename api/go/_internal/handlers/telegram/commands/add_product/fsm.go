@@ -1,4 +1,4 @@
-package commands
+package add_product
 
 import (
 	"context"
