@@ -2,12 +2,12 @@ package azure
 
 import (
 	"context"
+	"log"
 	"strings"
 	"testing"
 
 	appfx "github/huangc28/kikichoice-be/api/go/_internal/fx"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/fx"
@@ -15,7 +15,7 @@ import (
 
 type AzureTestSuite struct {
 	suite.Suite
-	client *azblob.Client
+	client *BlobStorageWrapperClient
 }
 
 func (s *AzureTestSuite) SetupSuite() {
@@ -24,8 +24,9 @@ func (s *AzureTestSuite) SetupSuite() {
 		fx.Provide(
 			NewSharedKeyCredential,
 			NewBlobStorageClient,
+			NewBlobStorageWrapperClient,
 		),
-		fx.Invoke(func(client *azblob.Client) {
+		fx.Invoke(func(client *BlobStorageWrapperClient) {
 			s.client = client
 		}),
 	)
@@ -38,15 +39,18 @@ func (s *AzureTestSuite) TestUploadTextFileToAzureBlob() {
 
 	ctx := context.Background()
 
-	_, err := s.client.UploadStream(ctx, "products", fileName, contentReader, nil)
+	url, err := s.client.UploadProductImage(ctx, fileName, contentReader)
 	require.NoError(s.T(), err, "Failed to upload file to Azure blob storage")
 
 	fileName2 := "subfolder/test2.txt"
 	fileContent2 := "Hello, Azure Blob Storage! This is a test file 2."
 	contentReader2 := strings.NewReader(fileContent2)
 
-	_, err = s.client.UploadStream(ctx, "products", fileName2, contentReader2, nil)
+	url2, err := s.client.UploadProductImage(ctx, fileName2, contentReader2)
 	require.NoError(s.T(), err, "Failed to upload file to Azure blob storage")
+
+	log.Println("url", url)
+	log.Println("url2", url2)
 }
 
 func TestAzureTestSuite(t *testing.T) {

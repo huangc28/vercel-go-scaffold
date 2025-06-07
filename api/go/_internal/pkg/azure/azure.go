@@ -1,12 +1,18 @@
 package azure
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"log"
 
 	"github/huangc28/kikichoice-be/api/go/_internal/configs"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+)
+
+const (
+	ProductImageContainerName = "products"
 )
 
 func NewSharedKeyCredential(cfg *configs.Config) (*azblob.SharedKeyCredential, error) {
@@ -29,4 +35,39 @@ func NewBlobStorageClient(cfg *configs.Config, cred *azblob.SharedKeyCredential)
 	}
 
 	return client, nil
+}
+
+type BlobStorageWrapperClient struct {
+	Client             *azblob.Client
+	StorageAccountName string
+}
+
+func NewBlobStorageWrapperClient(cfg *configs.Config, client *azblob.Client) (*BlobStorageWrapperClient, error) {
+	return &BlobStorageWrapperClient{
+		Client:             client,
+		StorageAccountName: cfg.Azure.BlobStorageAccountName,
+	}, nil
+}
+
+func (c *BlobStorageWrapperClient) UploadProductImage(ctx context.Context, blobName string, contentReader io.Reader) (string, error) {
+	_, err := c.Client.UploadStream(
+		ctx,
+		ProductImageContainerName,
+		blobName,
+		contentReader,
+		nil,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload file to Azure blob storage: %v", err)
+	}
+
+	return c.GetPublicURL(ProductImageContainerName, blobName), nil
+}
+
+func (c *BlobStorageWrapperClient) GetPublicURL(containerName, blobName string) string {
+	return fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s",
+		c.StorageAccountName,
+		containerName,
+		blobName,
+	)
 }
