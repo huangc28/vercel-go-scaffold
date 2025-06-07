@@ -28,6 +28,12 @@ type Config struct {
 	Telegram struct {
 		BotToken string `mapstructure:"bot_token"`
 	} `mapstructure:"telegram"`
+
+	Azure struct {
+		BlobStorageAccountName      string `mapstructure:"blob_storage_account_name"`
+		BlobStorageKey              string `mapstructure:"blob_storage_key"`
+		BlobStorageConnectionString string `mapstructure:"blob_storage_connection_string"`
+	} `mapstructure:"azure"`
 }
 
 func NewConfig(vp *viper.Viper) (*Config, error) {
@@ -51,6 +57,10 @@ func NewViper() *viper.Viper {
 	vp.SetDefault("db.user", "")
 	vp.SetDefault("db.password", "")
 	vp.SetDefault("db.name", "")
+
+	vp.SetDefault("azure.blob_storage_account_name", "")
+	vp.SetDefault("azure.blob_storage_key", "")
+	vp.SetDefault("azure.blob_storage_connection_string", "")
 
 	vp.SetDefault("telegram.bot_token", "")
 
