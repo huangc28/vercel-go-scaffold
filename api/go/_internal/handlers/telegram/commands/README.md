@@ -58,10 +58,18 @@ The `add_product` command has been **refactored to use a proper finite state mac
 
 ### Implementation Details
 
+#### File Structure
+
+The add_product command is split into two files for better organization:
+
+- **`add_product.go`** (319 lines): Main command orchestration, session management, UI utilities
+- **`add_product_fsm.go`** (292 lines): All FSM-related code including states, events, and callbacks
+
 #### Core Components
 
 **FSM Integration:**
 ```go
+// In add_product_fsm.go
 import "github.com/looplab/fsm"
 
 // States and Events are defined as constants
@@ -80,6 +88,7 @@ const (
 
 **FSM Factory:**
 ```go
+// In add_product_fsm.go
 func (c *AddProductCommand) createFSM(userID, chatID int64, state *UserState, msg *tgbotapi.Message) *fsm.FSM {
     fsmCtx := &FSMContext{...}
 
@@ -95,17 +104,13 @@ func (c *AddProductCommand) createFSM(userID, chatID int64, state *UserState, ms
 
 1. **Input Processing:**
    ```go
-   // Determine FSM event from user input
-   event := c.determineEvent(text, currentState, msg)
-
-   // Store input for validation
+   // In add_product.go - orchestrates FSM calls
+   event := c.determineEvent(text, currentState, msg)  // FSM logic
    state.CurrentInput = text
-
-   // Trigger FSM event
    userFSM.Event(ctx, event)
    ```
 
-2. **State Callbacks:**
+2. **State Callbacks (in add_product_fsm.go):**
    - `enter_*` callbacks: Send prompts to user
    - `before_*` callbacks: Validate input
    - `after_*` callbacks: Store validated data
