@@ -1,16 +1,13 @@
 import { google } from "googleapis";
 
-// Types for the sheet data
 export interface ProductRow {
+  sku: string;
   name: string;
-  // description: string;
-  // price: number;
-  // quantity: number;
-  // sku: string;
-  // category: string;
-  // imageUrl: string;
-  // isActive: boolean;
-  // rowIndex: number;
+  uuid: string;
+  ready_for_sale: "Y" | "N";
+  inventory: number;
+  price: number;
+  description: string;
 }
 
 // Google Sheets API client setup
@@ -43,11 +40,27 @@ export const fetchSheetData = async (): Promise<ProductRow[]> => {
 
     const rows = response.data.values || [];
 
-    return rows.map((row) => ({
-      name: row[2] || "",
-    })).filter((product) => product.name); // Filter out empty rows
+    return rows
+      .map(transformRowToProduct)
+      .filter((product) => filterEmptyUUID(product));
   } catch (error) {
     console.error("Error fetching sheet data:", error);
     throw new Error(`Failed to fetch sheet data: ${error.message}`);
   }
 };
+
+function transformRowToProduct(row: string[]): ProductRow {
+  return {
+    sku: row[0] || "",
+    uuid: row[1] || "",
+    name: row[2] || "",
+    ready_for_sale: row[3] === "Y" ? "Y" : "N",
+    inventory: parseInt(row[4] || "0"),
+    price: parseFloat(row[5] || "0"),
+    description: row[6] || "",
+  };
+}
+
+function filterEmptyUUID(products: ProductRow) {
+  return products.uuid !== "";
+}
