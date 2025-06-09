@@ -11,7 +11,6 @@ import (
 	"github/huangc28/kikichoice-be/api/go/_internal/handlers/telegram/commands"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/looplab/fsm"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
@@ -77,10 +76,14 @@ func (c *AddProductCommand) Handle(msg *tgbotapi.Message) error {
 		c.addProductStates,
 	)
 
-	return c.processUserInput(ctx, userFSM)
+	if userFSM.Current() == StateInit {
+		return userFSM.Event(ctx, EventStart)
+	}
+
+	return nil
 }
 
-func (c *AddProductCommand) Reply(ctx context.Context, msg *tgbotapi.Message) error {
+func (c *AddProductCommand) HandleReply(ctx context.Context, msg *tgbotapi.Message) error {
 	state, err := c.getOrCreateUserState(
 		ctx,
 		msg.From.ID,
@@ -97,17 +100,9 @@ func (c *AddProductCommand) Reply(ctx context.Context, msg *tgbotapi.Message) er
 	return nil
 }
 
-func (c *AddProductCommand) processUserInput(ctx context.Context, userFSM *fsm.FSM) error {
-	if userFSM.Current() == StateInit {
-		return userFSM.Event(ctx, EventStart)
-	}
-	return nil
-}
-
 // getOrCreateUserState retrieves existing session or creates new one
 func (c *AddProductCommand) getOrCreateUserState(ctx context.Context, userID, chatID int64) (*AddProductSessionState, error) {
-	session, err := c.commandDAO.GetUserSession(ctx, userID, chatID, c.Command().String())
-
+	session, err := c.commandDAO.GetUserSession(ctx, userID, c.Command().String())
 	if err == nil {
 		var state AddProductSessionState
 		if err := json.Unmarshal(session.State, &state); err != nil {

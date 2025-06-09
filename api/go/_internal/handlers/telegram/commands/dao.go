@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github/huangc28/kikichoice-be/api/go/_internal/db"
@@ -37,7 +38,7 @@ func NewCommandDAO(p CommandDAOParams) *CommandDAO {
 }
 
 // GetUserSession retrieves a user session by user_id and session_type
-func (cmd *CommandDAO) GetUserSession(ctx context.Context, userID, chatID int64, sessionType string) (*db.UserSession, error) {
+func (cmd *CommandDAO) GetUserSession(ctx context.Context, userID int64, sessionType string) (*db.UserSession, error) {
 	query := `
 		SELECT
 			id,
@@ -51,14 +52,13 @@ func (cmd *CommandDAO) GetUserSession(ctx context.Context, userID, chatID int64,
 		FROM user_sessions
 		WHERE
 			user_id = $1 AND
-			chat_id = $2 AND
-			session_type = $3 AND
+			session_type = $2 AND
 			expires_at > NOW()
 		LIMIT 1
 	`
 
 	var session db.UserSession
-	if err := cmd.db.QueryRowx(query, userID, chatID, sessionType).StructScan(&session); err != nil {
+	if err := cmd.db.QueryRowx(query, userID, sessionType).StructScan(&session); err != nil {
 		return nil, err
 	}
 
@@ -85,6 +85,9 @@ func (cmd *CommandDAO) UpsertUserSession(ctx context.Context, chatID, userID int
 
 	expiresAt := time.Now().Add(24 * time.Hour)
 	_, err = cmd.db.Exec(query, chatID, userID, sessionType, string(stateJSON), expiresAt)
+	if err != nil {
+		return fmt.Errorf("failed to UpsertUserSession: %w", err)
+	}
 	return err
 }
 

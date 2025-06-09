@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"context"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/fx"
 )
@@ -17,6 +19,7 @@ var (
 
 type CommandHandler interface {
 	Handle(msg *tgbotapi.Message) error
+	HandleReply(ctx context.Context, msg *tgbotapi.Message) error
 	Command() BotCommand
 }
 

@@ -153,5 +153,9 @@ func (h *TelegramHandler) processMessage(ctx context.Context, msg *tgbotapi.Mess
 }
 
 func (h *TelegramHandler) isReplyToCommand(msg *tgbotapi.Message) bool {
-	return msg.ReplyToMessage != nil
+	if msg.ReplyToMessage == nil {
+		return false
+	}
+
+	return msg.ReplyToMessage.From.ID == h.botAPI.Self.ID
 }

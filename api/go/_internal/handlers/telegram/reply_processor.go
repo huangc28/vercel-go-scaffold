@@ -31,7 +31,8 @@ func NewReplyProcessor(p ReplyProcessorParams) *ReplyProcessor {
 }
 
 func (r *ReplyProcessor) Process(ctx context.Context, reply *tgbotapi.Message) error {
-	session, err := r.commandDAO.GetUserSession(ctx, reply.From.ID, reply.Chat.ID, reply.Command())
+	log.Printf("** 0 %v", reply.From.ID)
+	session, err := r.commandDAO.GetUserSession(ctx, reply.From.ID, reply.Command())
 	if err != nil {
 		return fmt.Errorf("failed to get user session: %w", err)
 	}
@@ -41,7 +42,7 @@ func (r *ReplyProcessor) Process(ctx context.Context, reply *tgbotapi.Message) e
 
 	// Is the incoming message a reply to the exepcted reply message?
 	if reply.ReplyToMessage.MessageID == int(session.ExpectedReplyMessageID.Int64) {
-		r.commandHandlers[commands.BotCommand(session.SessionType)].Reply(ctx, reply)
+		r.commandHandlers[commands.BotCommand(session.SessionType)].HandleReply(ctx, reply)
 	}
 
 	return nil
