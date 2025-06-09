@@ -2,9 +2,7 @@ package add_product
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"strconv"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/looplab/fsm"
@@ -29,7 +27,7 @@ type FSMContext struct {
 	UserID           int64
 	ChatID           int64
 	Message          *tgbotapi.Message
-	UserState        *UserState
+	UserState        *AddProductSessionState
 	AddProductStates map[string]AddProductState
 	Command          *AddProductCommand
 }
@@ -38,7 +36,7 @@ type FSMContext struct {
 func NewAddProductFSM(
 	c *AddProductCommand,
 	userID, chatID int64,
-	state *UserState,
+	state *AddProductSessionState,
 	msg *tgbotapi.Message,
 	addProductStates map[string]AddProductState,
 ) *fsm.FSM {
@@ -87,7 +85,10 @@ func NewAddProductFSM(
 			{Name: EventResume, Src: []string{"*"}, Dst: "*"}, // Resume from where left off
 		},
 		fsm.Callbacks{
-			// Enter state callbacks (send prompts)
+			"enter_" + StateInit: func(ctx context.Context, e *fsm.Event) {
+				log.Printf("trigger enter_%s", StateInit)
+				fsmCtx.AddProductStates[StateInit].Enter(ctx, e, fsmCtx)
+			},
 			"enter_" + StateSKU: func(ctx context.Context, e *fsm.Event) {
 				fsmCtx.AddProductStates[StateSKU].Enter(ctx, e, fsmCtx)
 			},
@@ -126,102 +127,10 @@ func NewAddProductFSM(
 			"enter_" + StatePaused:    func(ctx context.Context, e *fsm.Event) {},
 
 			// Before event callbacks (validation)
-			"before_" + EventNext: func(ctx context.Context, e *fsm.Event) { c.validateInput(ctx, e, fsmCtx) },
+			"before_" + EventNext: func(ctx context.Context, e *fsm.Event) {},
 
 			// After event callbacks (data storage)
-			"after_" + EventNext: func(ctx context.Context, e *fsm.Event) { c.storeInput(ctx, e, fsmCtx) },
+			"after_" + EventNext: func(ctx context.Context, e *fsm.Event) {},
 		},
 	)
 }
-
-// FSM Event Callbacks
-
-// validateInput checks if input is valid before proceeding with FSM event
-func (c *AddProductCommand) validateInput(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	switch e.Src {
-	case StatePrice:
-		if !c.isValidPrice(fsmCtx.UserState.CurrentInput) {
-			e.Cancel(fmt.Errorf("invalid price format"))
-			return
-		}
-	case StateStock:
-		if !c.isValidStock(fsmCtx.UserState.CurrentInput) {
-			e.Cancel(fmt.Errorf("invalid stock format"))
-			return
-		}
-	case StateImages:
-		if !c.isValidImageUpload(fsmCtx) {
-			e.Cancel(fmt.Errorf("maximum images reached"))
-			return
-		}
-	}
-}
-
-// Validation helper methods
-func (c *AddProductCommand) isValidPrice(input string) bool {
-	_, err := strconv.ParseFloat(input, 64)
-	return err == nil
-}
-
-func (c *AddProductCommand) isValidStock(input string) bool {
-	_, err := strconv.Atoi(input)
-	return err == nil
-}
-
-func (c *AddProductCommand) isValidImageUpload(fsmCtx *FSMContext) bool {
-	return !(fsmCtx.Message != nil && fsmCtx.Message.Photo != nil && len(fsmCtx.UserState.ImageFileIDs) >= 5)
-}
-
-func (c *AddProductCommand) storeInput(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	log.Println("storeInput!")
-	// switch e.Src {
-	// case StateSKU:
-	// 	fsmCtx.UserState.Product.SKU = fsmCtx.UserState.CurrentInput
-	// case StateName:
-	// 	fsmCtx.UserState.Product.Name = fsmCtx.UserState.CurrentInput
-	// case StateCategory:
-	// 	fsmCtx.UserState.Product.Category = fsmCtx.UserState.CurrentInput
-	// case StatePrice:
-	// 	price, _ := strconv.ParseFloat(fsmCtx.UserState.CurrentInput, 64)
-	// 	fsmCtx.UserState.Product.Price = price
-	// case StateStock:
-	// 	stock, _ := strconv.Atoi(fsmCtx.UserState.CurrentInput)
-	// 	fsmCtx.UserState.Product.Stock = stock
-	// case StateDescription:
-	// 	fsmCtx.UserState.Product.Description = fsmCtx.UserState.CurrentInput
-	// case StateSpecs:
-	// 	if fsmCtx.State.CurrentInput != "/done" {
-	// 		fsmCtx.State.Specs = append(fsmCtx.State.Specs, fsmCtx.State.CurrentInput)
-	// 		// Send feedback for specs
-	// 		c.sendMessage(fsmCtx.ChatID, msgSpecAdded)
-	// 	}
-	// case StateImages:
-	// 	if fsmCtx.Message != nil && fsmCtx.Message.Photo != nil {
-	// 		fileID := fsmCtx.Message.Photo[len(fsmCtx.Message.Photo)-1].FileID
-	// 		fsmCtx.State.ImageFileIDs = append(fsmCtx.State.ImageFileIDs, fileID)
-
-	// 		// Send feedback for images
-	// 		const maxImages = 5
-	// 		remaining := maxImages - len(fsmCtx.State.ImageFileIDs)
-	// 		if remaining > 0 {
-	// 			c.sendMessage(fsmCtx.ChatID, fmt.Sprintf(msgImageUploaded, len(fsmCtx.State.ImageFileIDs), maxImages, remaining))
-	// 		} else {
-	// 			c.sendMessage(fsmCtx.ChatID, fmt.Sprintf(msgImageLimitReached, len(fsmCtx.State.ImageFileIDs), maxImages))
-	// 		}
-	// 	}
-	// }
-}
-
-// handleInvalidInput handles invalid input for current state
-// func (c *AddProductCommand) handleInvalidInput(chatID int64, currentState, input string) error {
-// 	switch currentState {
-// 	case StatePrice:
-// 		return c.sendMessage(chatID, msgInvalidPrice)
-// 	case StateStock:
-// 		return c.sendMessage(chatID, msgInvalidStock)
-// 	case StateImages:
-// 		return c.sendMessage(chatID, fmt.Sprintf("❌ 最多只能上傳 5 張圖片，目前已上傳 %d 張", 5))
-// 	default:
-// 		return c.sendMessage(chatID, msgInvalidInput)
-// 	}
-// }

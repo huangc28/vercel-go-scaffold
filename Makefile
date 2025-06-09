@@ -67,4 +67,4 @@ deploy/vercel/prod:
 #==============================================================
 .PHONY: telegram/set-webhook/local
 telegram/set-webhook/local:
-	curl "https://api.telegram.org/bot7944292479:AAEnzoQ_YGmj5qLWFxfabMweto_NDmg-u0c/setWebhook?url=https://8f89-111-241-103-226.ngrok-free.app/v1/webhooks/telegram" -X POST
+	curl "https://api.telegram.org/bot7944292479:AAEnzoQ_YGmj5qLWFxfabMweto_NDmg-u0c/setWebhook?url=https://6777-220-129-11-52.ngrok-free.app/v1/webhooks/telegram" -X POST

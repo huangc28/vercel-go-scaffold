@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 
 	"github/huangc28/kikichoice-be/api/go/_internal/db"
 	"github/huangc28/kikichoice-be/api/go/_internal/handlers/telegram/commands"
@@ -28,24 +29,6 @@ const (
 const (
 	errMaxImages = "❌ 最多只能上傳 5 張圖片，目前已上傳 %d 張"
 )
-
-// UserState represents the product data and current input
-type UserState struct {
-	Product      ProductData `json:"product"`
-	Specs        []string    `json:"specs"`
-	ImageFileIDs []string    `json:"image_file_ids"`
-	CurrentInput string      `json:"current_input"`
-	FSMState     string      `json:"fsm_state"`
-}
-
-type ProductData struct {
-	SKU         string  `json:"sku"`
-	Name        string  `json:"name"`
-	Category    string  `json:"category"`
-	Price       float64 `json:"price"`
-	Stock       int     `json:"stock"`
-	Description string  `json:"description"`
-}
 
 type AddProductCommand struct {
 	dao              *commands.CommandDAO
@@ -80,64 +63,65 @@ func (c *AddProductCommand) Handle(msg *tgbotapi.Message) error {
 	ctx := context.Background()
 	userID := msg.From.ID
 	chatID := msg.Chat.ID
-	text := msg.Text
 
-	state, err := c.getOrCreateUserState(ctx, userID, chatID, text)
+	state, err := c.getOrCreateUserState(ctx, userID, chatID)
 	if err != nil {
 		return fmt.Errorf("failed to get user state: %w", err)
 	}
+
+	log.Printf("* 1 %+v", state)
 
 	return c.processUserInput(ctx, userID, chatID, state, msg)
 }
 
 // processUserInput handles FSM logic - extracted for better readability
-func (c *AddProductCommand) processUserInput(ctx context.Context, userID, chatID int64, state *UserState, msg *tgbotapi.Message) error {
-	userFSM := NewAddProductFSM(c, userID, chatID, state, msg, c.addProductStates)
+func (c *AddProductCommand) processUserInput(ctx context.Context, userID, chatID int64, sessState *AddProductSessionState, msg *tgbotapi.Message) error {
+	userFSM := NewAddProductFSM(
+		c,
+		userID,
+		chatID,
+		sessState,
+		msg,
+		c.addProductStates,
+	)
+
+	// For new sessions, start the flow
+	if sessState.FSMState == StateInit {
+		return userFSM.Event(ctx, EventStart)
+	}
+
 	availEvents := userFSM.AvailableTransitions()
 
 	if len(availEvents) == 0 {
-		return fmt.Errorf("Check your FSM configuration, no available events on current state: %s", state.FSMState)
+		return fmt.Errorf("Check your FSM configuration, no available events on current state: %s", sessState.FSMState)
 	}
-
-	c.logger.Infow(
-		"Available events",
-		"events", availEvents,
-		"current state", state.FSMState,
-	)
 
 	if err := userFSM.Event(ctx, availEvents[0]); err != nil {
-		return fmt.Errorf("FSM event error: %w, current state: %s, event applied: %s", err, state.FSMState, availEvents[0])
+		return fmt.Errorf("FSM event error: %w, current state: %s, event applied: %s", err, sessState.FSMState, availEvents[0])
 	}
 
-	return nil
-}
-
-// saveStateIfNeeded handles state persistence logic
-func (c *AddProductCommand) saveStateIfNeeded(ctx context.Context, userID int64, state *UserState) error {
-	if state.FSMState != StateCompleted && state.FSMState != StateCancelled {
-		if err := c.dao.UpdateUserSession(ctx, userID, "add_product", state); err != nil {
-			return fmt.Errorf("failed to save user state: %w", err)
-		}
-	}
 	return nil
 }
 
 // getOrCreateUserState retrieves existing session or creates new one
-func (c *AddProductCommand) getOrCreateUserState(ctx context.Context, userID int64, chatID int64, text string) (*UserState, error) {
-	session, err := c.dao.GetUserSession(ctx, userID, "add_product")
+func (c *AddProductCommand) getOrCreateUserState(ctx context.Context, userID, chatID int64) (*AddProductSessionState, error) {
+	session, err := c.dao.GetUserSession(ctx, userID, chatID, "add_product")
 
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("failed to get user session: %w", err)
+	if err == nil {
+		var state AddProductSessionState
+		if err := json.Unmarshal(session.State, &state); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal session state: %w", err)
+		}
+		return &state, nil
 	}
 
-	var state *UserState
 	if errors.Is(err, sql.ErrNoRows) {
-		state = &UserState{
-			FSMState:     StateInit,
-			Product:      ProductData{},
-			Specs:        []string{},
-			ImageFileIDs: []string{},
-			CurrentInput: "",
+		state := &AddProductSessionState{
+			FSMState:               StateInit,
+			Product:                ProductData{},
+			Specs:                  []string{},
+			ImageFileIDs:           []string{},
+			ExpectedReplyMessageID: nil,
 		}
 
 		stateJSON, err := json.Marshal(state)
@@ -156,127 +140,10 @@ func (c *AddProductCommand) getOrCreateUserState(ctx context.Context, userID int
 			return nil, fmt.Errorf("failed to create user session: %w", err)
 		}
 
-		c.sendMessage(chatID, msgStartFlow)
-
 		return state, nil
 	}
 
-	if err := json.Unmarshal(session.State, &state); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal session state: %w", err)
-	}
-
-	return state, nil
-}
-
-// sendMessage sends a text message to the chat
-func (c *AddProductCommand) sendMessage(chatID int64, text string) error {
-	msg := tgbotapi.NewMessage(chatID, text)
-	_, err := c.botAPI.Send(msg)
-	return err
-}
-
-// sendSummary sends a product summary for confirmation
-func (c *AddProductCommand) sendSummary(chatID int64, state *UserState) error {
-	summary := fmt.Sprintf(
-		"商品摘要：\nSKU: %s\n名稱: %s\n類別: %s\n價格: %.2f\n庫存: %d\n描述: %s\n規格: %v\n圖片數量: %d\n請選擇：",
-		state.Product.SKU,
-		state.Product.Name,
-		state.Product.Category,
-		state.Product.Price,
-		state.Product.Stock,
-		state.Product.Description,
-		state.Specs,
-		len(state.ImageFileIDs),
-	)
-
-	msg := tgbotapi.NewMessage(chatID, summary)
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("✅ 確認", "confirm"),
-			tgbotapi.NewInlineKeyboardButtonData("❌ 取消", "cancel"),
-		),
-	)
-	msg.ReplyMarkup = keyboard
-
-	_, err := c.botAPI.Send(msg)
-	return err
-}
-
-// getStepDescription returns a user-friendly description of the current step
-func (c *AddProductCommand) getStepDescription(state string) string {
-	descriptions := map[string]string{
-		StateSKU:         "輸入商品 SKU",
-		StateName:        "輸入商品名稱",
-		StateCategory:    "輸入商品類別",
-		StatePrice:       "輸入商品價格",
-		StateStock:       "輸入商品庫存數量",
-		StateDescription: "輸入商品描述",
-		StateSpecs:       "輸入商品規格",
-		StateImages:      "上傳商品圖片",
-		StateConfirm:     "確認商品資訊",
-	}
-
-	if desc, exists := descriptions[state]; exists {
-		return desc
-	}
-	return "未知步驟"
-}
-
-// HandleCallback handles inline keyboard button presses
-func (c *AddProductCommand) HandleCallback(callback *tgbotapi.CallbackQuery) error {
-	ctx := context.Background()
-	userID := callback.From.ID
-	chatID := callback.Message.Chat.ID
-	data := callback.Data
-
-	// Get current user state
-	session, err := c.dao.GetUserSession(ctx, userID, "add_product")
-	if err != nil || session == nil {
-		return c.sendMessage(chatID, msgNoActiveSession)
-	}
-
-	var state UserState
-	if err := json.Unmarshal(session.State, &state); err != nil {
-		return err
-	}
-
-	// Create FSM instance and set current state
-	userFSM := NewAddProductFSM(c, userID, chatID, &state, nil, c.addProductStates)
-	userFSM.SetState(state.FSMState)
-
-	// Map callback data to FSM events
-	var event string
-	switch {
-	case data == "cancel":
-		event = EventCancel
-	case data == "confirm":
-		event = EventConfirm
-	case data == "pause":
-		event = EventPause
-	case len(data) > 5 && data[:5] == "skip_":
-		event = EventSkip
-	case len(data) > 5 && data[:5] == "done_":
-		event = EventDone
-	default:
-		return c.sendMessage(chatID, msgUnknownOperation)
-	}
-
-	// Trigger FSM event
-	if err := userFSM.Event(ctx, event); err != nil {
-		return fmt.Errorf("FSM callback event error: %w", err)
-	}
-
-	// Update FSM state
-	state.FSMState = userFSM.Current()
-
-	// Save updated state (only if not completed or cancelled)
-	if state.FSMState != StateCompleted && state.FSMState != StateCancelled {
-		if err := c.dao.UpdateUserSession(ctx, userID, "add_product", &state); err != nil {
-			return fmt.Errorf("failed to save user state: %w", err)
-		}
-	}
-
-	return nil
+	return nil, err
 }
 
 func (c *AddProductCommand) Command() commands.BotCommand {

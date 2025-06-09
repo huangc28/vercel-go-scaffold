@@ -53,8 +53,8 @@ type AddProductState interface {
 	Name() string
 	Buttons() []tgbotapi.InlineKeyboardButton
 	Prompt() string
-	Send(msg *tgbotapi.Message)
-	Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext)
+	Send(msg *tgbotapi.Message) error
+	Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) error
 }
 
 func AsAddProductState(f any) any {
@@ -88,53 +88,14 @@ func (s *AddProductStateInit) Prompt() string {
 	return promptInit
 }
 
-func (s *AddProductStateInit) Send(msg *tgbotapi.Message) {
+func (s *AddProductStateInit) Send(msg *tgbotapi.Message) error {
 	message := tgbotapi.NewMessage(msg.Chat.ID, s.Prompt())
-	s.botAPI.Send(message)
+	_, err := s.botAPI.Send(message)
+	return err
 }
 
-func (s *AddProductStateInit) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	s.Send(fsmCtx.Message)
-}
-
-// StateSKU - Required field, only cancel/pause options
-type AddProductStateSKU struct {
-	botAPI *tgbotapi.BotAPI
-}
-
-func NewAddProductStateSKU(botAPI *tgbotapi.BotAPI) AddProductState {
-	return &AddProductStateSKU{
-		botAPI: botAPI,
-	}
-}
-
-func (s *AddProductStateSKU) Name() string {
-	return StateSKU
-}
-
-func (s *AddProductStateSKU) Buttons() []tgbotapi.InlineKeyboardButton {
-	return []tgbotapi.InlineKeyboardButton{
-		tgbotapi.NewInlineKeyboardButtonData("❌ 取消", "cancel"),
-		tgbotapi.NewInlineKeyboardButtonData("💾 暫存", "pause"),
-	}
-}
-
-func (s *AddProductStateSKU) Prompt() string {
-	return promptSKU
-}
-
-func (s *AddProductStateSKU) Send(msg *tgbotapi.Message) {
-	message := tgbotapi.NewMessage(msg.Chat.ID, s.Prompt())
-	message.ReplyToMessageID = msg.MessageID
-	message.ReplyMarkup = tgbotapi.ForceReply{
-		ForceReply: true,
-		Selective:  true,
-	}
-	s.botAPI.Send(message)
-}
-
-func (s *AddProductStateSKU) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	s.Send(fsmCtx.Message)
+func (s *AddProductStateInit) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) error {
+	return s.Send(fsmCtx.Message)
 }
 
 // StateName - Required field, only cancel/pause options
@@ -163,17 +124,18 @@ func (s *AddProductStateName) Prompt() string {
 	return promptName
 }
 
-func (s *AddProductStateName) Send(msg *tgbotapi.Message) {
+func (s *AddProductStateName) Send(msg *tgbotapi.Message) error {
 	message := tgbotapi.NewMessage(msg.Chat.ID, s.Prompt())
 	message.ReplyMarkup = tgbotapi.ForceReply{
 		ForceReply: true,
 		Selective:  true,
 	}
-	s.botAPI.Send(message)
+	_, err := s.botAPI.Send(message)
+	return err
 }
 
-func (s *AddProductStateName) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	s.Send(fsmCtx.Message)
+func (s *AddProductStateName) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) error {
+	return s.Send(fsmCtx.Message)
 }
 
 // StateCategory - Required field, only cancel/pause options
@@ -202,17 +164,18 @@ func (s *AddProductStateCategory) Prompt() string {
 	return promptCategory
 }
 
-func (s *AddProductStateCategory) Send(msg *tgbotapi.Message) {
+func (s *AddProductStateCategory) Send(msg *tgbotapi.Message) error {
 	message := tgbotapi.NewMessage(msg.Chat.ID, s.Prompt())
 	message.ReplyMarkup = tgbotapi.ForceReply{
 		ForceReply: true,
 		Selective:  true,
 	}
-	s.botAPI.Send(message)
+	_, err := s.botAPI.Send(message)
+	return err
 }
 
-func (s *AddProductStateCategory) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	s.Send(fsmCtx.Message)
+func (s *AddProductStateCategory) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) error {
+	return s.Send(fsmCtx.Message)
 }
 
 // StatePrice - Required field, only cancel/pause options
@@ -241,17 +204,18 @@ func (s *AddProductStatePrice) Prompt() string {
 	return promptPrice
 }
 
-func (s *AddProductStatePrice) Send(msg *tgbotapi.Message) {
+func (s *AddProductStatePrice) Send(msg *tgbotapi.Message) error {
 	message := tgbotapi.NewMessage(msg.Chat.ID, s.Prompt())
 	message.ReplyMarkup = tgbotapi.ForceReply{
 		ForceReply: true,
 		Selective:  true,
 	}
-	s.botAPI.Send(message)
+	_, err := s.botAPI.Send(message)
+	return err
 }
 
-func (s *AddProductStatePrice) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	s.Send(fsmCtx.Message)
+func (s *AddProductStatePrice) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) error {
+	return s.Send(fsmCtx.Message)
 }
 
 // StateStock - Required field, only cancel/pause options
@@ -280,17 +244,18 @@ func (s *AddProductStateStock) Prompt() string {
 	return promptStock
 }
 
-func (s *AddProductStateStock) Send(msg *tgbotapi.Message) {
+func (s *AddProductStateStock) Send(msg *tgbotapi.Message) error {
 	message := tgbotapi.NewMessage(msg.Chat.ID, s.Prompt())
 	message.ReplyMarkup = tgbotapi.ForceReply{
 		ForceReply: true,
 		Selective:  true,
 	}
-	s.botAPI.Send(message)
+	_, err := s.botAPI.Send(message)
+	return err
 }
 
-func (s *AddProductStateStock) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	s.Send(fsmCtx.Message)
+func (s *AddProductStateStock) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) error {
+	return s.Send(fsmCtx.Message)
 }
 
 // StateDescription - Optional field, can be skipped
@@ -320,17 +285,18 @@ func (s *AddProductStateDescription) Prompt() string {
 	return promptDescription
 }
 
-func (s *AddProductStateDescription) Send(msg *tgbotapi.Message) {
+func (s *AddProductStateDescription) Send(msg *tgbotapi.Message) error {
 	message := tgbotapi.NewMessage(msg.Chat.ID, s.Prompt())
 	message.ReplyMarkup = tgbotapi.ForceReply{
 		ForceReply: true,
 		Selective:  true,
 	}
-	s.botAPI.Send(message)
+	_, err := s.botAPI.Send(message)
+	return err
 }
 
-func (s *AddProductStateDescription) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	s.Send(fsmCtx.Message)
+func (s *AddProductStateDescription) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) error {
+	return s.Send(fsmCtx.Message)
 }
 
 // StateSpecs - Multi-input optional field, needs done/skip buttons
@@ -361,17 +327,18 @@ func (s *AddProductStateSpecs) Prompt() string {
 	return promptSpecs
 }
 
-func (s *AddProductStateSpecs) Send(msg *tgbotapi.Message) {
+func (s *AddProductStateSpecs) Send(msg *tgbotapi.Message) error {
 	message := tgbotapi.NewMessage(msg.Chat.ID, s.Prompt())
 	message.ReplyMarkup = tgbotapi.ForceReply{
 		ForceReply: true,
 		Selective:  true,
 	}
-	s.botAPI.Send(message)
+	_, err := s.botAPI.Send(message)
+	return err
 }
 
-func (s *AddProductStateSpecs) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	s.Send(fsmCtx.Message)
+func (s *AddProductStateSpecs) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) error {
+	return s.Send(fsmCtx.Message)
 }
 
 // StateImages - Multi-input optional field, needs done/skip buttons
@@ -402,7 +369,7 @@ func (s *AddProductStateImages) Prompt() string {
 	return promptImages
 }
 
-func (s *AddProductStateImages) Send(msg *tgbotapi.Message) {
+func (s *AddProductStateImages) Send(msg *tgbotapi.Message) error {
 	message := tgbotapi.NewMessage(msg.Chat.ID, s.Prompt())
 	buttons := s.Buttons()
 	if len(buttons) > 0 {
@@ -411,11 +378,12 @@ func (s *AddProductStateImages) Send(msg *tgbotapi.Message) {
 		)
 		message.ReplyMarkup = keyboard
 	}
-	s.botAPI.Send(message)
+	_, err := s.botAPI.Send(message)
+	return err
 }
 
-func (s *AddProductStateImages) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
-	s.Send(fsmCtx.Message)
+func (s *AddProductStateImages) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) error {
+	return s.Send(fsmCtx.Message)
 }
 
 // StateConfirm - Final confirmation, only confirm/cancel
@@ -444,12 +412,14 @@ func (s *AddProductStateConfirm) Prompt() string {
 	return ""
 }
 
-func (s *AddProductStateConfirm) Send(msg *tgbotapi.Message) {
+func (s *AddProductStateConfirm) Send(msg *tgbotapi.Message) error {
 	// Note: StateConfirm doesn't send its own message as it's handled by sendSummary
+	return nil
 }
 
-func (s *AddProductStateConfirm) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+func (s *AddProductStateConfirm) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) error {
 	// TODO: Implement confirm logic - will handle summary display
+	return nil
 }
 
 // StateCompleted - Final state, no buttons needed
@@ -475,13 +445,15 @@ func (s *AddProductStateCompleted) Prompt() string {
 	return msgSuccess
 }
 
-func (s *AddProductStateCompleted) Send(msg *tgbotapi.Message) {
+func (s *AddProductStateCompleted) Send(msg *tgbotapi.Message) error {
 	message := tgbotapi.NewMessage(msg.Chat.ID, s.Prompt())
-	s.botAPI.Send(message)
+	_, err := s.botAPI.Send(message)
+	return err
 }
 
-func (s *AddProductStateCompleted) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+func (s *AddProductStateCompleted) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) error {
 	// TODO: Implement completion logic
+	return nil
 }
 
 // StateCancelled - Final state, no buttons needed
@@ -507,13 +479,15 @@ func (s *AddProductStateCancelled) Prompt() string {
 	return msgCancelled
 }
 
-func (s *AddProductStateCancelled) Send(msg *tgbotapi.Message) {
+func (s *AddProductStateCancelled) Send(msg *tgbotapi.Message) error {
 	message := tgbotapi.NewMessage(msg.Chat.ID, s.Prompt())
-	s.botAPI.Send(message)
+	_, err := s.botAPI.Send(message)
+	return err
 }
 
-func (s *AddProductStateCancelled) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+func (s *AddProductStateCancelled) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) error {
 	// TODO: Implement cancellation logic
+	return nil
 }
 
 // StatePaused - Paused state, offer resume option
@@ -543,7 +517,7 @@ func (s *AddProductStatePaused) Prompt() string {
 	return msgPaused
 }
 
-func (s *AddProductStatePaused) Send(msg *tgbotapi.Message) {
+func (s *AddProductStatePaused) Send(msg *tgbotapi.Message) error {
 	message := tgbotapi.NewMessage(msg.Chat.ID, s.Prompt())
 	buttons := s.Buttons()
 	if len(buttons) > 0 {
@@ -552,11 +526,13 @@ func (s *AddProductStatePaused) Send(msg *tgbotapi.Message) {
 		)
 		message.ReplyMarkup = keyboard
 	}
-	s.botAPI.Send(message)
+	_, err := s.botAPI.Send(message)
+	return err
 }
 
-func (s *AddProductStatePaused) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) {
+func (s *AddProductStatePaused) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) error {
 	// TODO: Implement pause logic
+	return nil
 }
 
 // Factory function to create state instances based on state name

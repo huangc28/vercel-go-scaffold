@@ -78,19 +78,6 @@ func (h *TelegramHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle callback queries (button presses)
-	// if update.CallbackQuery != nil {
-	// 	h.logger.Info("Processing callback query")
-	// 	if err := h.processCallback(update.CallbackQuery); err != nil {
-	// 		h.logger.Errorw("Failed to process callback", "error", err)
-	// 		render.ChiErr(w, r, err, FailedToProcessMessage,
-	// 			render.WithStatusCode(http.StatusInternalServerError))
-	// 		return
-	// 	}
-	// 	render.ChiJSON(w, r, map[string]string{"status": "ok"})
-	// 	return
-	// }
-
 	if update.Message == nil {
 		h.logger.Info("Received update without message")
 		render.ChiJSON(w, r, map[string]string{"status": "ok"})
@@ -156,17 +143,5 @@ func (h *TelegramHandler) processCommand(msg *tgbotapi.Message) error {
 		return err
 	}
 
-	return nil
-}
-
-// processCallback handles callback queries from inline keyboards
-func (h *TelegramHandler) processCallback(callback *tgbotapi.CallbackQuery) error {
-	if handler, exists := h.commandHandlers[commands.AddProduct]; exists {
-		if callbackHandler, ok := handler.(commands.CallbackHandler); ok {
-			return callbackHandler.HandleCallback(callback)
-		}
-	}
-
-	h.logger.Warnw("No callback handler found for callback", "data", callback.Data)
 	return nil
 }

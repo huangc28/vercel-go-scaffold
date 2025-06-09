@@ -25,7 +25,7 @@ func NewProductDAO(p ProductDAOParams) *ProductDAO {
 }
 
 // SaveProduct saves the product to the database using raw SQL
-func (p *ProductDAO) SaveProduct(ctx context.Context, state *UserState) error {
+func (p *ProductDAO) SaveProduct(ctx context.Context, state *AddProductSessionState) error {
 	// Create product using raw SQL
 	query := `
 		INSERT INTO products (sku, name, price, category, stock_count, description)

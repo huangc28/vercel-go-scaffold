@@ -37,18 +37,28 @@ func NewCommandDAO(p CommandDAOParams) *CommandDAO {
 }
 
 // GetUserSession retrieves a user session by user_id and session_type
-func (cmd *CommandDAO) GetUserSession(ctx context.Context, userID int64, sessionType string) (*db.UserSession, error) {
+func (cmd *CommandDAO) GetUserSession(ctx context.Context, userID, chatID int64, sessionType string) (*db.UserSession, error) {
 	query := `
-		SELECT id, chat_id, user_id, session_type, state, created_at, updated_at, expires_at
+		SELECT
+			id,
+			chat_id,
+			user_id,
+			session_type,
+			state,
+			created_at,
+			updated_at,
+			expires_at
 		FROM user_sessions
-		WHERE user_id = $1 AND session_type = $2 AND expires_at > NOW()
+		WHERE
+			user_id = $1 AND
+			chat_id = $2 AND
+			session_type = $3 AND
+			expires_at > NOW()
 		LIMIT 1
 	`
 
 	var session db.UserSession
-	err := cmd.db.QueryRowx(query, userID, sessionType).StructScan(&session)
-
-	if err != nil {
+	if err := cmd.db.QueryRowx(query, userID, chatID, sessionType).StructScan(&session); err != nil {
 		return nil, err
 	}
 
@@ -78,32 +88,9 @@ func (cmd *CommandDAO) UpsertUserSession(ctx context.Context, chatID, userID int
 	return err
 }
 
-// UpdateUserSession updates an existing user session
-func (cmd *CommandDAO) UpdateUserSession(ctx context.Context, userID int64, sessionType string, state interface{}) error {
-	stateJSON, err := json.Marshal(state)
-	if err != nil {
-		return err
-	}
-
-	query := `
-		UPDATE user_sessions
-		SET state = $3, updated_at = NOW(), expires_at = $4
-		WHERE user_id = $1 AND session_type = $2
-	`
-
-	expiresAt := time.Now().Add(24 * time.Hour)
-	_, err = cmd.db.Exec(query, userID, sessionType, stateJSON, expiresAt)
-	return err
-}
-
 // DeleteUserSession deletes a user session
 func (cmd *CommandDAO) DeleteUserSession(ctx context.Context, userID int64, sessionType string) error {
 	query := `DELETE FROM user_sessions WHERE user_id = $1 AND session_type = $2`
 	_, err := cmd.db.Exec(query, userID, sessionType)
 	return err
-}
-
-// UpdateSession updates session state (keeping the original method signature)
-func (cmd *CommandDAO) UpdateSession(ctx context.Context, userID int64, sessType string, state interface{}) error {
-	return cmd.UpdateUserSession(ctx, userID, sessType, state)
 }
