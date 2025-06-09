@@ -58,12 +58,13 @@ type User struct {
 }
 
 type UserSession struct {
-	ID          int64              `json:"id"`
-	ChatID      int64              `json:"chat_id"`
-	UserID      int64              `json:"user_id"`
-	SessionType string             `json:"session_type"`
-	State       []byte             `json:"state"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	ID                     int64              `json:"id"`
+	ChatID                 int64              `json:"chat_id"`
+	UserID                 int64              `json:"user_id"`
+	ExpectedReplyMessageID pgtype.Int8        `json:"expected_reply_message_id"`
+	SessionType            string             `json:"session_type"`
+	State                  []byte             `json:"state"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	ExpiresAt              pgtype.Timestamptz `json:"expires_at"`
 }

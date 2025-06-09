@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     id BIGSERIAL PRIMARY KEY,
     chat_id BIGINT NOT NULL,
     user_id BIGINT NOT NULL,
+    expected_reply_message_id BIGINT,
     session_type VARCHAR(50) NOT NULL DEFAULT 'add_product',
     state JSONB NOT NULL DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -10,9 +10,8 @@ type ProductData struct {
 }
 
 type AddProductSessionState struct {
-	Product                ProductData `json:"product"`
-	Specs                  []string    `json:"specs"`
-	ImageFileIDs           []string    `json:"image_file_ids"`
-	FSMState               string      `json:"fsm_state"`
-	ExpectedReplyMessageID *int        `json:"expected_reply_message_id"`
+	Product      ProductData `json:"product"`
+	Specs        []string    `json:"specs"`
+	ImageFileIDs []string    `json:"image_file_ids"`
+	FSMState     string      `json:"fsm_state"`
 }

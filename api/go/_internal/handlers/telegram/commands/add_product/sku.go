@@ -46,7 +46,6 @@ func (s *AddProductStateSKU) Prompt() string {
 }
 
 func (s *AddProductStateSKU) Send(msg *tgbotapi.Message) error {
-	log.Printf("* 2 %v", msg.Chat.ID)
 	message := tgbotapi.NewMessage(msg.Chat.ID, s.Prompt())
 	message.ReplyToMessageID = msg.MessageID
 	message.ReplyMarkup = tgbotapi.ForceReply{
@@ -58,31 +57,26 @@ func (s *AddProductStateSKU) Send(msg *tgbotapi.Message) error {
 }
 
 func (s *AddProductStateSKU) Enter(ctx context.Context, e *fsm.Event, fsmCtx *FSMContext) error {
-	log.Printf(
-		"** 1 %v %v %v",
-		fsmCtx.Message.Chat.ID,
-		fsmCtx.Message.From.ID,
-		fsmCtx.UserState.FSMState,
-	)
-	fsmCtx.UserState.ExpectedReplyMessageID = &fsmCtx.Message.MessageID
-
-	if err := s.commandDAO.UpsertUserSession(
+	if err := s.commandDAO.UpdateExpectedReplyMessageID(
 		ctx,
 		fsmCtx.Message.Chat.ID,
 		fsmCtx.Message.From.ID,
-		"add_product",
-		fsmCtx.UserState,
+		fsmCtx.Command.Command().String(),
+		fsmCtx.Message.MessageID,
 	); err != nil {
-		log.Printf("** 2 %v", err)
 		return fmt.Errorf("failed to update user session in sku state enter: %w", err)
 	}
-
-	log.Printf("** 3 %v", fsmCtx.Message.Chat.ID)
 
 	if err := s.Send(fsmCtx.Message); err != nil {
 		return fmt.Errorf("failed to send message in sku state enter: %w", err)
 	}
 
+	return nil
+}
+
+func (s *AddProductStateSKU) Reply(ctx context.Context, msg *tgbotapi.Message, fsm *fsm.FSM) error {
+	log.Printf("** 3 %v", msg.ReplyToMessage.Text)
+	log.Printf("** 3 %v", fsm.Current())
 	return nil
 }
 

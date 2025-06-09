@@ -24,8 +24,6 @@ const (
 
 // FSMContext holds context for FSM callbacks
 type FSMContext struct {
-	UserID           int64
-	ChatID           int64
 	Message          *tgbotapi.Message
 	UserState        *AddProductSessionState
 	AddProductStates map[string]AddProductState
@@ -33,24 +31,15 @@ type FSMContext struct {
 }
 
 // NewAddProductFSM creates a new FSM instance with all events and callbacks
-func NewAddProductFSM(
-	c *AddProductCommand,
-	userID, chatID int64,
-	state *AddProductSessionState,
-	msg *tgbotapi.Message,
-	addProductStates map[string]AddProductState,
-) *fsm.FSM {
+func NewAddProductFSM(state *AddProductSessionState, msg *tgbotapi.Message, addProductStates map[string]AddProductState) *fsm.FSM {
 	fsmCtx := &FSMContext{
-		UserID:           userID,
-		ChatID:           chatID,
 		Message:          msg,
-		Command:          c,
 		UserState:        state,
 		AddProductStates: addProductStates,
 	}
 
 	return fsm.NewFSM(
-		StateInit,
+		state.FSMState,
 		fsm.Events{
 			// Start flow
 			{Name: EventStart, Src: []string{StateInit}, Dst: StateSKU},
@@ -92,45 +81,45 @@ func NewAddProductFSM(
 			"enter_" + StateSKU: func(ctx context.Context, e *fsm.Event) {
 				fsmCtx.AddProductStates[StateSKU].Enter(ctx, e, fsmCtx)
 			},
-			"enter_" + StateName: func(ctx context.Context, e *fsm.Event) {
-				fsmCtx.AddProductStates[StateName].Enter(ctx, e, fsmCtx)
-			},
-			"enter_" + StateCategory: func(ctx context.Context, e *fsm.Event) {
-				fsmCtx.AddProductStates[StateCategory].Enter(ctx, e, fsmCtx)
-			},
-			"enter_" + StatePrice: func(ctx context.Context, e *fsm.Event) {
-				log.Println("enter_" + StatePrice)
-				fsmCtx.AddProductStates[StatePrice].Enter(ctx, e, fsmCtx)
-			},
-			"enter_" + StateStock: func(ctx context.Context, e *fsm.Event) {
-				log.Println("enter_" + StateStock)
-				fsmCtx.AddProductStates[StateStock].Enter(ctx, e, fsmCtx)
-			},
-			"enter_" + StateDescription: func(ctx context.Context, e *fsm.Event) {
-				log.Println("enter_" + StateDescription)
-				fsmCtx.AddProductStates[StateDescription].Enter(ctx, e, fsmCtx)
-			},
-			"enter_" + StateSpecs: func(ctx context.Context, e *fsm.Event) {
-				log.Println("enter_" + StateSpecs)
-				fsmCtx.AddProductStates[StateSpecs].Enter(ctx, e, fsmCtx)
-			},
-			"enter_" + StateImages: func(ctx context.Context, e *fsm.Event) {
-				log.Println("enter_" + StateImages)
-				fsmCtx.AddProductStates[StateImages].Enter(ctx, e, fsmCtx)
-			},
-			"enter_" + StateConfirm: func(ctx context.Context, e *fsm.Event) {
-				log.Println("enter_" + StateConfirm)
-				fsmCtx.AddProductStates[StateConfirm].Enter(ctx, e, fsmCtx)
-			},
-			"enter_" + StateCompleted: func(ctx context.Context, e *fsm.Event) {},
-			"enter_" + StateCancelled: func(ctx context.Context, e *fsm.Event) {},
-			"enter_" + StatePaused:    func(ctx context.Context, e *fsm.Event) {},
+			// "enter_" + StateName: func(ctx context.Context, e *fsm.Event) {
+			// 	fsmCtx.AddProductStates[StateName].Enter(ctx, e, fsmCtx)
+			// },
+			// "enter_" + StateCategory: func(ctx context.Context, e *fsm.Event) {
+			// 	fsmCtx.AddProductStates[StateCategory].Enter(ctx, e, fsmCtx)
+			// },
+			// "enter_" + StatePrice: func(ctx context.Context, e *fsm.Event) {
+			// 	log.Println("enter_" + StatePrice)
+			// 	fsmCtx.AddProductStates[StatePrice].Enter(ctx, e, fsmCtx)
+			// },
+			// "enter_" + StateStock: func(ctx context.Context, e *fsm.Event) {
+			// 	log.Println("enter_" + StateStock)
+			// 	fsmCtx.AddProductStates[StateStock].Enter(ctx, e, fsmCtx)
+			// },
+			// "enter_" + StateDescription: func(ctx context.Context, e *fsm.Event) {
+			// 	log.Println("enter_" + StateDescription)
+			// 	fsmCtx.AddProductStates[StateDescription].Enter(ctx, e, fsmCtx)
+			// },
+			// "enter_" + StateSpecs: func(ctx context.Context, e *fsm.Event) {
+			// 	log.Println("enter_" + StateSpecs)
+			// 	fsmCtx.AddProductStates[StateSpecs].Enter(ctx, e, fsmCtx)
+			// },
+			// "enter_" + StateImages: func(ctx context.Context, e *fsm.Event) {
+			// 	log.Println("enter_" + StateImages)
+			// 	fsmCtx.AddProductStates[StateImages].Enter(ctx, e, fsmCtx)
+			// },
+			// "enter_" + StateConfirm: func(ctx context.Context, e *fsm.Event) {
+			// 	log.Println("enter_" + StateConfirm)
+			// 	fsmCtx.AddProductStates[StateConfirm].Enter(ctx, e, fsmCtx)
+			// },
+			// "enter_" + StateCompleted: func(ctx context.Context, e *fsm.Event) {},
+			// "enter_" + StateCancelled: func(ctx context.Context, e *fsm.Event) {},
+			// "enter_" + StatePaused:    func(ctx context.Context, e *fsm.Event) {},
 
-			// Before event callbacks (validation)
-			"before_" + EventNext: func(ctx context.Context, e *fsm.Event) {},
+			// // Before event callbacks (validation)
+			// "before_" + EventNext: func(ctx context.Context, e *fsm.Event) {},
 
-			// After event callbacks (data storage)
-			"after_" + EventNext: func(ctx context.Context, e *fsm.Event) {},
+			// // After event callbacks (data storage)
+			// "after_" + EventNext: func(ctx context.Context, e *fsm.Event) {},
 		},
 	)
 }

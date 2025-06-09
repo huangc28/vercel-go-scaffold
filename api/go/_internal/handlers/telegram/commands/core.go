@@ -7,6 +7,10 @@ import (
 
 type BotCommand string
 
+func (c BotCommand) String() string {
+	return string(c)
+}
+
 var (
 	AddProduct BotCommand = "add"
 )

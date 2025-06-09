@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -38,6 +39,7 @@ type TelegramHandler struct {
 	config          *configs.Config
 	botAPI          *tgbotapi.BotAPI
 	commandHandlers map[commands.BotCommand]commands.CommandHandler
+	replyProcessor  *ReplyProcessor
 	logger          *zap.SugaredLogger
 }
 
@@ -48,6 +50,7 @@ type TelegramHandlerParams struct {
 	Config          *configs.Config
 	BotAPI          *tgbotapi.BotAPI
 	CommandHandlers map[commands.BotCommand]commands.CommandHandler
+	ReplyProcessor  *ReplyProcessor
 	Logger          *zap.SugaredLogger
 }
 
@@ -58,6 +61,7 @@ func NewTelegramHandler(p TelegramHandlerParams) *TelegramHandler {
 		config:          p.Config,
 		botAPI:          p.BotAPI,
 		commandHandlers: p.CommandHandlers,
+		replyProcessor:  p.ReplyProcessor,
 	}
 }
 
@@ -80,18 +84,12 @@ func (h *TelegramHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 	if update.Message == nil {
 		h.logger.Info("Received update without message")
-		render.ChiJSON(w, r, map[string]string{"status": "ok"})
-		return
-	}
-
-	if !update.Message.IsCommand() {
-		h.logger.Info("Received non-command message without text or photo")
-		render.ChiJSON(w, r, map[string]string{"status": "ok"})
+		render.ChiJSON(w, r, nil)
 		return
 	}
 
 	message := h.retrieveMessage(&update)
-	if err := h.processCommand(message); err != nil {
+	if err := h.processMessage(r.Context(), message); err != nil {
 		h.logger.Errorw("Failed to process message", "error", err)
 		render.ChiErr(
 			w, r, err,
@@ -101,7 +99,7 @@ func (h *TelegramHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	render.ChiJSON(w, r, map[string]string{"status": "ok"})
+	render.ChiJSON(w, r, nil)
 }
 
 func (h *TelegramHandler) retrieveMessage(update *tgbotapi.Update) *tgbotapi.Message {
@@ -122,26 +120,38 @@ func (h *TelegramHandler) retrieveMessage(update *tgbotapi.Update) *tgbotapi.Mes
 	return message
 }
 
-// processCommand handles the incoming command based on command type
-func (h *TelegramHandler) processCommand(msg *tgbotapi.Message) error {
-	cmd := msg.Command()
-
-	h.logger.Infow("Processing command", "command", cmd)
-
-	handler, exists := h.commandHandlers[commands.BotCommand(cmd)]
-	if !exists {
-		h.logger.Errorw("Command not found", "command", cmd)
-		return fmt.Errorf("command %s not found", cmd)
+// processMessage handles the incoming message based on message type
+func (h *TelegramHandler) processMessage(ctx context.Context, msg *tgbotapi.Message) error {
+	if h.isReplyToCommand(msg) {
+		if err := h.replyProcessor.Process(ctx, msg); err != nil {
+			h.logger.Errorw("Failed to process reply", "error", err)
+			return err
+		}
+		return nil
 	}
 
-	if err := handler.Handle(msg); err != nil {
-		h.logger.Errorw(
-			"Failed to handle command",
-			"command", cmd,
-			"error", err,
-		)
-		return err
+	if msg.IsCommand() {
+		h.logger.Infow("Processing command", "command", msg.Command())
+
+		handler, exists := h.commandHandlers[commands.BotCommand(msg.Command())]
+		if !exists {
+			h.logger.Errorw("Command not found", "command", msg.Command())
+			return fmt.Errorf("command %s not found", msg.Command())
+		}
+
+		if err := handler.Handle(msg); err != nil {
+			h.logger.Errorw(
+				"Failed to handle command",
+				"command", msg.Command(),
+				"error", err,
+			)
+			return err
+		}
 	}
 
 	return nil
+}
+
+func (h *TelegramHandler) isReplyToCommand(msg *tgbotapi.Message) bool {
+	return msg.ReplyToMessage != nil
 }

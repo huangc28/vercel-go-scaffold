@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 
 	"github/huangc28/kikichoice-be/api/go/_internal/db"
 	"github/huangc28/kikichoice-be/api/go/_internal/handlers/telegram/commands"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/looplab/fsm"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
@@ -31,7 +31,7 @@ const (
 )
 
 type AddProductCommand struct {
-	dao              *commands.CommandDAO
+	commandDAO       *commands.CommandDAO
 	productDAO       *ProductDAO
 	botAPI           *tgbotapi.BotAPI
 	logger           *zap.SugaredLogger
@@ -41,7 +41,7 @@ type AddProductCommand struct {
 type AddProductCommandParams struct {
 	fx.In
 
-	DAO              *commands.CommandDAO
+	CommandDAO       *commands.CommandDAO
 	ProductDAO       *ProductDAO
 	BotAPI           *tgbotapi.BotAPI
 	Logger           *zap.SugaredLogger
@@ -50,7 +50,7 @@ type AddProductCommandParams struct {
 
 func NewAddProductCommand(p AddProductCommandParams) *AddProductCommand {
 	return &AddProductCommand{
-		dao:              p.DAO,
+		commandDAO:       p.CommandDAO,
 		productDAO:       p.ProductDAO,
 		botAPI:           p.BotAPI,
 		logger:           p.Logger,
@@ -61,51 +61,52 @@ func NewAddProductCommand(p AddProductCommandParams) *AddProductCommand {
 // Handle processes incoming messages using FSM - simplified for readability
 func (c *AddProductCommand) Handle(msg *tgbotapi.Message) error {
 	ctx := context.Background()
-	userID := msg.From.ID
-	chatID := msg.Chat.ID
 
-	state, err := c.getOrCreateUserState(ctx, userID, chatID)
+	state, err := c.getOrCreateUserState(
+		ctx,
+		msg.From.ID,
+		msg.Chat.ID,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to get user state: %w", err)
 	}
 
-	log.Printf("* 1 %+v", state)
-
-	return c.processUserInput(ctx, userID, chatID, state, msg)
-}
-
-// processUserInput handles FSM logic - extracted for better readability
-func (c *AddProductCommand) processUserInput(ctx context.Context, userID, chatID int64, sessState *AddProductSessionState, msg *tgbotapi.Message) error {
 	userFSM := NewAddProductFSM(
-		c,
-		userID,
-		chatID,
-		sessState,
+		state,
 		msg,
 		c.addProductStates,
 	)
 
-	// For new sessions, start the flow
-	if sessState.FSMState == StateInit {
+	return c.processUserInput(ctx, userFSM)
+}
+
+func (c *AddProductCommand) Reply(ctx context.Context, msg *tgbotapi.Message) error {
+	state, err := c.getOrCreateUserState(
+		ctx,
+		msg.From.ID,
+		msg.Chat.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to get user state: %w", err)
+	}
+
+	userFSM := NewAddProductFSM(state, msg, c.addProductStates)
+
+	c.addProductStates[userFSM.Current()].Reply(ctx, msg, userFSM)
+
+	return nil
+}
+
+func (c *AddProductCommand) processUserInput(ctx context.Context, userFSM *fsm.FSM) error {
+	if userFSM.Current() == StateInit {
 		return userFSM.Event(ctx, EventStart)
 	}
-
-	availEvents := userFSM.AvailableTransitions()
-
-	if len(availEvents) == 0 {
-		return fmt.Errorf("Check your FSM configuration, no available events on current state: %s", sessState.FSMState)
-	}
-
-	if err := userFSM.Event(ctx, availEvents[0]); err != nil {
-		return fmt.Errorf("FSM event error: %w, current state: %s, event applied: %s", err, sessState.FSMState, availEvents[0])
-	}
-
 	return nil
 }
 
 // getOrCreateUserState retrieves existing session or creates new one
 func (c *AddProductCommand) getOrCreateUserState(ctx context.Context, userID, chatID int64) (*AddProductSessionState, error) {
-	session, err := c.dao.GetUserSession(ctx, userID, chatID, "add_product")
+	session, err := c.commandDAO.GetUserSession(ctx, userID, chatID, c.Command().String())
 
 	if err == nil {
 		var state AddProductSessionState
@@ -117,11 +118,10 @@ func (c *AddProductCommand) getOrCreateUserState(ctx context.Context, userID, ch
 
 	if errors.Is(err, sql.ErrNoRows) {
 		state := &AddProductSessionState{
-			FSMState:               StateInit,
-			Product:                ProductData{},
-			Specs:                  []string{},
-			ImageFileIDs:           []string{},
-			ExpectedReplyMessageID: nil,
+			Product:      ProductData{},
+			Specs:        []string{},
+			ImageFileIDs: []string{},
+			FSMState:     StateInit,
 		}
 
 		stateJSON, err := json.Marshal(state)
@@ -132,11 +132,17 @@ func (c *AddProductCommand) getOrCreateUserState(ctx context.Context, userID, ch
 		session = &db.UserSession{
 			ChatID:      chatID,
 			UserID:      userID,
-			SessionType: "add_product",
+			SessionType: c.Command().String(),
 			State:       stateJSON,
 		}
 
-		if err := c.dao.UpsertUserSession(ctx, chatID, userID, "add_product", session); err != nil {
+		if err := c.commandDAO.UpsertUserSession(
+			ctx,
+			chatID,
+			userID,
+			c.Command().String(),
+			session,
+		); err != nil {
 			return nil, fmt.Errorf("failed to create user session: %w", err)
 		}
 

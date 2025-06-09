@@ -88,6 +88,16 @@ func (cmd *CommandDAO) UpsertUserSession(ctx context.Context, chatID, userID int
 	return err
 }
 
+func (cmd *CommandDAO) UpdateExpectedReplyMessageID(ctx context.Context, chatID, userID int64, sessionType string, expectedReplyMessageID int) error {
+	query := `
+		UPDATE user_sessions
+		SET expected_reply_message_id = $1
+		WHERE user_id = $2 AND chat_id = $3 AND session_type = $4
+	`
+	_, err := cmd.db.Exec(query, expectedReplyMessageID, userID, chatID, sessionType)
+	return err
+}
+
 // DeleteUserSession deletes a user session
 func (cmd *CommandDAO) DeleteUserSession(ctx context.Context, userID int64, sessionType string) error {
 	query := `DELETE FROM user_sessions WHERE user_id = $1 AND session_type = $2`
