@@ -1,0 +1,275 @@
+# AI Assistant Development Guide for Go Chi Vercel Starter
+
+This document provides AI assistants (GitHub Copilot, Cursor, etc.) with the context and conventions needed to help developers work with this Go Chi Vercel starter project effectively.
+
+## Project Overview
+
+This is a **Go + Chi + Vercel + Supabase** serverless API starter using:
+- **Architecture**: Layered architecture with dependency injection (Uber FX)
+- **Database**: PostgreSQL via Supabase with SQLC for type-safe queries
+- **Deployment**: Vercel serverless functions
+- **Router**: Chi router with middleware support
+- **Module Path**: `github/huangc28/kikichoice-be` (developers should update this in go.mod)
+
+## Directory Structure & Conventions
+
+```
+├── api/go/
+│   ├── entries/              # Vercel function entry points (serverless handlers)
+│   └── _internal/            # Core application code
+│       ├── configs/          # Configuration management
+│       ├── db/              # Database layer (SQLC generated + manual)
+│       ├── handlers/        # Business logic handlers
+│       ├── middlewares/     # HTTP middlewares
+│       ├── pkg/             # Shared utilities
+│       ├── router/          # Router configuration
+│       └── fx/              # Dependency injection options
+├── supabase/
+│   ├── migrations/          # Database migrations
+│   └── schemas/            # Database schema files
+└── scripts/                # Setup and utility scripts
+```
+
+## Key Conventions
+
+### 1. Entry Points Pattern (`api/go/entries/`)
+
+**Purpose**: Vercel serverless function handlers that bootstrap the application
+**Pattern**: Each file represents a deployable endpoint
+
+```go
+// Entry point template
+package handler
+
+import (
+    "net/http"
+    "github.com/go-chi/chi/v5"
+    appfx "github/huangc28/kikichoice-be/api/go/_internal/fx"
+    "github/huangc28/kikichoice-be/api/go/_internal/handlers/yourhandler"
+    "github/huangc28/kikichoice-be/api/go/_internal/pkg/logger"
+    "github/huangc28/kikichoice-be/api/go/_internal/router"
+    routerfx "github/huangc28/kikichoice-be/api/go/_internal/router/fx"
+    "go.uber.org/fx"
+)
+
+func Handle(w http.ResponseWriter, r *http.Request) {
+    fx.New(
+        logger.TagLogger("handler-name"),
+        appfx.CoreConfigOptions,        // Core dependencies
+        routerfx.CoreRouterOptions,     // Router setup
+        
+        fx.Provide(
+            router.AsRoute(yourhandler.NewYourHandler),
+        ),
+        
+        fx.Invoke(func(router *chi.Mux) {
+            router.ServeHTTP(w, r)
+        }),
+    )
+}
+```
+
+### 2. Handlers Pattern (`api/go/_internal/handlers/`)
+
+**Purpose**: Business logic implementation
+**Structure**: Each handler has its own package with:
+- `handler.go` - Main handler logic
+- `err_codes.go` - Error constants
+
+```go
+// Handler template
+package yourhandler
+
+import (
+    "net/http"
+    "github.com/go-chi/chi/v5"
+    "github/huangc28/kikichoice-be/api/go/_internal/pkg/render"
+    "go.uber.org/fx"
+    "go.uber.org/zap"
+)
+
+type YourHandler struct {
+    logger *zap.SugaredLogger
+    // Add other dependencies
+}
+
+type YourHandlerParams struct {
+    fx.In
+    
+    Logger *zap.SugaredLogger
+    // Add other dependencies with fx.In
+}
+
+func NewYourHandler(p YourHandlerParams) *YourHandler {
+    return &YourHandler{
+        logger: p.Logger,
+    }
+}
+
+// RegisterRoutes registers routes with the chi router
+func (h *YourHandler) RegisterRoutes(r *chi.Mux) {
+    r.Get("/your-path", h.Handle)
+    r.Post("/your-path", h.HandlePost)
+}
+
+// Handle processes requests
+func (h *YourHandler) Handle(w http.ResponseWriter, r *http.Request) {
+    h.logger.Info("Processing request")
+    
+    // Your business logic here
+    
+    // Use render.ChiJSON for success responses
+    render.ChiJSON(w, r, responseData)
+    
+    // Use render.ChiErr for error responses
+    // render.ChiErr(w, r, err, ErrorCode, render.WithStatusCode(http.StatusBadRequest))
+}
+```
+
+### 3. Database Layer (`api/go/_internal/db/`)
+
+**Generated Files** (by SQLC - don't edit manually):
+- `models.go` - Database models
+- `queries.sql.go` - Generated query functions
+- `db.go` - Core database interfaces
+
+**Manual Files**:
+- `core.go` - Database connection setup
+- `tx.go` - Transaction helpers
+
+**Query Definition**:
+Place SQL queries in `api/go/_internal/db/sqlc_queries/queries.sql`:
+
+```sql
+-- name: GetUser :one
+SELECT id, name, email, created_at, updated_at, deleted_at
+FROM users
+WHERE id = $1
+LIMIT 1;
+
+-- name: CreateUser :one
+INSERT INTO users (name, email)
+VALUES ($1, $2)
+RETURNING id, name, email, created_at, updated_at, deleted_at;
+```
+
+### 4. Response Patterns
+
+**Success Response**:
+```go
+render.ChiJSON(w, r, data)
+```
+
+**Error Response**:
+```go
+render.ChiErr(w, r, err, "ERROR_CODE", 
+    render.WithStatusCode(http.StatusBadRequest))
+```
+
+**Response Structure**:
+```json
+{
+    "data": { /* your data */ },
+    "errors": null
+}
+```
+
+### 5. Configuration Pattern
+
+Access config via dependency injection:
+```go
+type HandlerParams struct {
+    fx.In
+    
+    Config *configs.Config
+}
+```
+
+Environment variables follow this pattern:
+- Database: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
+- Use `VERCEL_ENV` for environment detection
+
+### 6. Middleware Usage
+
+Apply middlewares in `api/go/_internal/router/core.go`:
+```go
+r.Use(middleware.Logger)
+r.Use(wvmiddlewares.Logger)
+```
+
+Custom middlewares go in `api/go/_internal/middlewares/`
+
+### 7. Error Code Conventions
+
+Define error codes as constants in `err_codes.go`:
+```go
+const (
+    FailedToEncodeResponse = "FAILED_TO_ENCODE_RESPONSE"
+    InvalidRequestData     = "INVALID_REQUEST_DATA"
+)
+```
+
+## Adding New API Endpoints
+
+### Step 1: Create Handler
+1. Create new package in `api/go/_internal/handlers/yourhandler/`
+2. Implement handler with `RegisterRoutes` and `Handle` methods
+3. Add error codes in `err_codes.go`
+
+### Step 2: Create Entry Point
+1. Create file in `api/go/entries/your-endpoint.go`
+2. Use the entry point template above
+3. Wire your handler with `router.AsRoute(yourhandler.NewYourHandler)`
+
+### Step 3: Configure Vercel Routing
+Add to `vercel.json`:
+```json
+{
+  "rewrites": [
+    {
+      "source": "/api/your-endpoint",
+      "destination": "/api/go/entries/your-endpoint"
+    }
+  ]
+}
+```
+
+### Step 4: Database Operations (if needed)
+1. Add SQL queries to `api/go/_internal/db/sqlc_queries/queries.sql`
+2. Run `make sqlc/generate`
+3. Use generated functions in your handler
+
+## Development Workflow
+
+1. **Generate SQLC**: `make sqlc/generate`
+2. **Start Dev Server**: `make start/vercel`
+3. **Run Tests**: `make test`
+4. **Deploy Preview**: `make deploy/vercel/preview`
+
+## Import Path Pattern
+
+All internal imports use: `github/huangc28/kikichoice-be/api/go/_internal/...`
+
+**Note**: When setting up a new project, developers should update the module path in `go.mod` to match their project.
+
+## Testing Endpoints
+
+Access endpoints at: `http://localhost:3008/your-endpoint`
+
+## Example Implementation
+
+See the `hello` handler for a complete example:
+- Entry point: `api/go/entries/hello.go`
+- Handler: `api/go/_internal/handlers/hello/handler.go`
+- Error codes: `api/go/_internal/handlers/hello/err_codes.go`
+
+---
+
+When helping developers, always:
+1. Follow the exact import patterns shown
+2. Use the dependency injection pattern with fx.In
+3. Implement both RegisterRoutes and Handle methods
+4. Use render.ChiJSON/ChiErr for responses
+5. Create error codes as constants
+6. Follow the layered architecture
+7. Remember to update import paths if the module name changes

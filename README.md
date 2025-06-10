@@ -273,6 +273,16 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Supabase Documentation](https://supabase.com/docs)
 - [SQLC Documentation](https://docs.sqlc.dev/)
 
+## 🤖 AI Assistant Integration
+
+This project includes comprehensive documentation for AI assistants (GitHub Copilot, Cursor, etc.) to understand the project structure and conventions:
+
+- **`.cursorrules`** - Primary configuration file that Cursor automatically loads for context
+- **`docs/AI_DEVELOPMENT_GUIDE.md`** - Detailed development guide with examples and patterns
+- **`.vscode/settings.json`** - VS Code configuration optimized for Go development and Copilot
+
+These files contain all the context AI assistants need to help you build APIs following the project's conventions without requiring lengthy explanations each time.
+
 ---
 
 **Happy coding!** 🎉
