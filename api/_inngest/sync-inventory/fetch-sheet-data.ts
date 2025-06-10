@@ -5,7 +5,7 @@ export interface ProductRow {
   sku: string;
   name: string;
   uuid: string;
-  ready_for_sale: "Y" | "N";
+  ready_for_sale: boolean;
   stock_count: number;
   price: number;
   short_desc: string;
@@ -34,6 +34,8 @@ export const fetchSheetData = async (): Promise<ProductRow[]> => {
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
     const range = process.env.GOOGLE_SHEET_RANGE || "Sheet1!A2:H1000"; // Skip header row
 
+    console.info("** 1", process.env.GOOGLE_SHEET_RANGE);
+
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range,
@@ -41,9 +43,11 @@ export const fetchSheetData = async (): Promise<ProductRow[]> => {
 
     const rows = response.data.values || [];
 
+    console.info("number of rows", rows.length);
+
     return rows
       .map(transformRowToProduct)
-      .filter((product) => filterEmptyUUID(product));
+      .filter(filterEmptyUUID);
   } catch (error) {
     console.error("Error fetching sheet data:", error);
     throw new Error(`Failed to fetch sheet data: ${error.message}`);
@@ -52,13 +56,13 @@ export const fetchSheetData = async (): Promise<ProductRow[]> => {
 
 function transformRowToProduct(row: string[]): ProductRow {
   return {
-    sku: row[0] || "",
-    uuid: row[1] || "",
-    name: row[2] || "",
-    ready_for_sale: row[3] === "Y" ? "Y" : "N",
-    stock_count: parseInt(row[4] || "0"),
-    price: parseFloat(row[5] || "0"),
-    short_desc: row[6] || "",
+    sku: (row[0] || "").trim(),
+    uuid: (row[1] || "").trim(),
+    name: (row[2] || "").trim(),
+    ready_for_sale: (row[3] || "").trim() === "Y",
+    stock_count: parseInt((row[6] || "0").trim()) || 0,
+    price: parseFloat((row[10] || "0").trim()) || 0,
+    short_desc: (row[4] || "").trim(),
   };
 }
 

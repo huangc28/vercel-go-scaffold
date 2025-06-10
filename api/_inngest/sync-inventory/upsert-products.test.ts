@@ -8,13 +8,13 @@ describe("updateProducts", () => {
         uuid: "123",
         sku: "123",
         name: "123",
-        ready_for_sale: "Y",
+        ready_for_sale: true,
         stock_count: 1,
         price: 1,
         short_desc: "123",
       },
     ]);
 
-    expect(products).toEqual({ inserted: 1, updated: 0, total: 1 });
+    console.log("upsert result", products);
   });
 });

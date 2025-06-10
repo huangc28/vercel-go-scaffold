@@ -82,7 +82,16 @@ const processBatch = async (products: ProductRow[]): Promise<{
 
   const query = `
     WITH upsert_result AS (
-      INSERT INTO products (uuid, sku, name, ready_for_sale, stock_count, price, short_desc, updated_at)
+      INSERT INTO products (
+        uuid,
+        sku,
+        name,
+        ready_for_sale,
+        stock_count,
+        price,
+        short_desc,
+        updated_at
+      )
       VALUES ${valuesClause}
       ON CONFLICT (uuid)
       DO UPDATE SET
