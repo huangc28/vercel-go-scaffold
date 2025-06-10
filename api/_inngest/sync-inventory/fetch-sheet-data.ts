@@ -55,13 +55,14 @@ export const fetchSheetData = async (): Promise<ProductRow[]> => {
 };
 
 function transformRowToProduct(row: string[]): ProductRow {
+  console.info("** row", row);
   return {
     sku: (row[0] || "").trim(),
     uuid: (row[1] || "").trim(),
     name: (row[2] || "").trim(),
     ready_for_sale: (row[3] || "").trim() === "Y",
-    stock_count: parseInt((row[6] || "0").trim()) || 0,
-    price: parseFloat((row[10] || "0").trim()) || 0,
+    stock_count: parseInt((row[7] || "0").trim()) || 0,
+    price: parseFloat((row[11] || "0").trim()) || 0,
     short_desc: (row[4] || "").trim(),
   };
 }

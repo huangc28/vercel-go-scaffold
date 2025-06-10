@@ -5,6 +5,10 @@ import { z } from "zod";
  * Environment variable schema with validation and default values
  */
 const envSchema = z.object({
+  VERCEL_ENV: z
+    .enum(["development", "production", "preview"])
+    .default("development"),
+
   // Database configuration
   DB_HOST: z.string().default(""),
   DB_USER: z.string().default(""),
