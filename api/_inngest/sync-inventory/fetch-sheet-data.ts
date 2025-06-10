@@ -1,21 +1,22 @@
 import { google } from "googleapis";
+import { env } from "#shared/env.ts";
 
 export interface ProductRow {
   sku: string;
   name: string;
   uuid: string;
   ready_for_sale: "Y" | "N";
-  inventory: number;
+  stock_count: number;
   price: number;
-  description: string;
+  short_desc: string;
 }
 
 // Google Sheets API client setup
 const getGoogleSheetsClient = () => {
   const auth = new google.auth.GoogleAuth({
     credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(
+      client_email: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      private_key: env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(
         /\\n/g,
         "\n",
       ),
@@ -55,9 +56,9 @@ function transformRowToProduct(row: string[]): ProductRow {
     uuid: row[1] || "",
     name: row[2] || "",
     ready_for_sale: row[3] === "Y" ? "Y" : "N",
-    inventory: parseInt(row[4] || "0"),
+    stock_count: parseInt(row[4] || "0"),
     price: parseFloat(row[5] || "0"),
-    description: row[6] || "",
+    short_desc: row[6] || "",
   };
 }
 

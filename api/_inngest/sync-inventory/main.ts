@@ -1,4 +1,5 @@
 import { Inngest } from "inngest";
+import { updateProducts } from "./upsert-products.js";
 
 const syncInventory = (inngest: Inngest) => {
   return inngest.createFunction(

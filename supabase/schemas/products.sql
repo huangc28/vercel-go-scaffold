@@ -7,14 +7,13 @@ CREATE TABLE products
   name VARCHAR(255) NOT NULL,
   price DECIMAL(10,2) NOT NULL CHECK (price >= 0),
   original_price DECIMAL(10,2) CHECK (original_price >= 0),
-  category VARCHAR(100) NOT NULL,
-  in_stock BOOLEAN NOT NULL DEFAULT true,
+  category VARCHAR(100),
   stock_count INTEGER NOT NULL DEFAULT 0 CHECK (stock_count >= 0),
+  reserved_count INTEGER NOT NULL DEFAULT 0 CHECK (reserved_count >= 0),
   specs JSONB DEFAULT '[]',
-  description TEXT,
-  full_description TEXT,
-  is_active BOOLEAN NOT NULL DEFAULT true,
-  sort_order INTEGER DEFAULT 0,
+  short_desc TEXT,
+  full_desc TEXT,
+  ready_for_sale BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -49,7 +48,6 @@ CREATE TABLE product_specs
 CREATE INDEX idx_products_uuid ON products(uuid);
 CREATE INDEX idx_products_sku ON products(sku);
 CREATE INDEX idx_products_category ON products(category);
-CREATE INDEX idx_products_in_stock ON products(in_stock);
 CREATE INDEX idx_products_created_at ON products(created_at);
 
 CREATE INDEX idx_product_images_product_id ON product_images(product_id);

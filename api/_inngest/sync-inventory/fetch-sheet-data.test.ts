@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchSheetData, ProductRow } from "./fetch-sheet-data";
+import { describe, expect, it } from "vitest";
+import { fetchSheetData } from "./fetch-sheet-data.ts";
 
 // Simple test to call real function and see output
 describe("fetchSheetData - Real Function Call", () => {
