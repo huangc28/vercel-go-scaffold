@@ -48,22 +48,5 @@ func NewViper() *viper.Viper {
 	vp.SetDefault("db.password", "")
 	vp.SetDefault("db.name", "")
 
-	vp.SetDefault("aws.access_key_id", "")
-	vp.SetDefault("aws.secret_access_key", "")
-	vp.SetDefault("aws.s3_bucket_region", "")
-	vp.SetDefault("aws.s3_snapshot_bucket", "")
-
-	vp.SetDefault("clerk.secret_key", "")
-
-	vp.SetDefault("starburst.host", "")
-	vp.SetDefault("starburst.port", "")
-	vp.SetDefault("starburst.catalog", "")
-	vp.SetDefault("starburst.schema", "")
-	vp.SetDefault("starburst.user", "")
-	vp.SetDefault("starburst.password", "")
-
-	vp.SetDefault("inngest.event_key", "")
-	vp.SetDefault("inngest.app_id", "")
-
 	return vp
 }
